@@ -5,6 +5,7 @@ import { promisify } from "node:util";
 import { database } from "./db";
 import { registerAsset, readAsset } from "./assets";
 import { requireDemoMode } from "./config";
+import { composeOwnedSegments } from "./composition";
 import {
   StudioError,
   type StudioProject,
@@ -180,49 +181,11 @@ export async function executeDemo(
       delete project.finalAssetId;
     } else if (operation === "regenerate_segment") {
       const segment = context ? await context.segment(input.segmentId!, () => clip(input.segmentId!)) : await clip(input.segmentId!);
-      project.segments = project.segments.map((item) =>
-        item.id === segment.id ? segment : item,
-      );
+      project.segments = [...project.segments.filter(item=>item.id!==segment.id),segment].sort((a,b)=>a.id-b.id);
       project.stage = "generated";
       delete project.finalAssetId;
     } else if (operation === "compose_video") {
-      const sources = input.segmentIds!.map(
-        (id) => project.segments.find((item) => item.id === id)!,
-      );
-      const paths: string[] = [];
-      for (const source of sources) {
-        const file = path.join(workspace, `${source.id}.mp4`);
-        await writeFile(file, (await readAsset(owner, source.assetId)).buffer);
-        paths.push(file);
-      }
-      const list = path.join(workspace, "concat.txt"),
-        output = path.join(workspace, "final.mp4");
-      await writeFile(
-        list,
-        paths
-          .map((file) => `file '${file}'`)
-          .join("\n"),
-      );
-      await ffmpeg([
-        "-f",
-        "concat",
-        "-safe",
-        "0",
-        "-i",
-        list,
-        "-c",
-        "copy",
-        "-movflags",
-        "+faststart",
-        output,
-      ]);
-      project.finalAssetId = await registerAsset(
-        owner,
-        project.id,
-        "video/mp4",
-        await readFile(output),
-      );
-      project.stage = "done";
+      await composeOwnedSegments(owner,project,input.segmentIds!,context?.signal,checkpoint);
     }
     await checkpoint(95);
     return project;

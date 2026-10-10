@@ -10,7 +10,7 @@ import { safeError } from "./service";
 import { mcpSchemas, executeMcpTool, type McpToolName } from "./mcp-contracts";
 import { mcpScope } from "./mcp-auth";
 import { toolOutputSchema } from "./types";
-import { publicOrigin } from "./config";
+import { publicOrigin,studioMode } from "./config";
 
 export const widgetUri = "ui://vidio/studio-v1.html";
 const titles: Record<McpToolName, string> = {
@@ -35,6 +35,7 @@ const titles: Record<McpToolName, string> = {
   get_final_video: "Read the final video asset",
 };
 export function createMcpServer(owner: string) {
+  const mode=studioMode();
   const server = new McpServer({ name: "vidio", version: "0.1.0" });
   for (const name of Object.keys(mcpSchemas) as McpToolName[]) {
     const metadata: Record<string, unknown> = {
@@ -48,8 +49,8 @@ export function createMcpServer(owner: string) {
       server,
       name,
       {
-        title: titles[name],
-        description: `${titles[name]}. Authenticated DEMO ONLY: no AI/provider generation. Uses fixture recognition/scripts, sample tones and local two-second videos. Job tools require the current project revision; generation/composition require confirmed=true. This flag is not verified human consent; paid execution is disabled. Use synthetic test data.`,
+        title: mode==="demo" ? titles[name] : titles[name].replace(/(?:demo|sample|fixture|local) /gi,""),
+        description: mode==="demo" ? `${titles[name]}. Authenticated DEMO ONLY: no AI/provider generation. Uses fixture recognition/scripts, sample tones and local two-second videos. Job tools require the current project revision; generation/composition require confirmed=true. This flag is not verified human consent; paid execution is disabled. Use synthetic test data.` : "Authenticated owner-scoped production studio. Generation requires confirmed=true, an idempotency key, operator opt-in and daily segment budget. Poll returned job IDs for durable progress. Recognition, draft scripts and voice preview are not yet connected in production and fail explicitly. Confirmation is client-declared, not proof of human consent.",
         inputSchema: mcpSchemas[name],
         outputSchema: toolOutputSchema,
         annotations: {
@@ -63,7 +64,7 @@ export function createMcpServer(owner: string) {
             "render_project",
           ].includes(name),
           destructiveHint: name === "cancel_job",
-          openWorldHint: false,
+            openWorldHint: mode==="production",
           idempotentHint: name !== "create_project" && name !== "update_script",
         },
         _meta: metadata,
@@ -81,7 +82,7 @@ export function createMcpServer(owner: string) {
           const failure = safeError(error);
           return {
             isError: true,
-            structuredContent: { mode: "demo", message: failure.body.error.message, error: failure.body.error },
+            structuredContent: { mode, message: failure.body.error.message, error: failure.body.error },
             content: [
               { type: "text" as const, text: failure.body.error.message },
             ],
@@ -105,7 +106,7 @@ export function createMcpServer(owner: string) {
             prefersBorder: true,
           },
           "openai/widgetDescription":
-            "vidio demo studio: review fixture scripts, generate local sample scenes and compose a demo video. No paid AI calls.",
+            mode==="demo" ? "vidio demo studio: review fixture scripts, generate local sample scenes and compose a demo video. No paid AI calls." : "vidio studio: inspect owned jobs and media, approve generation within your configured budget, and compose completed scenes.",
           "openai/widgetCSP": {
             resource_domains: [publicOrigin()],
             connect_domains: [],

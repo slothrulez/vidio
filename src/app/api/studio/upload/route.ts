@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { actor } from "@/studio/auth";
-import { checkOrigin, requireDemoMode } from "@/studio/config";
+import { checkOrigin, studioMode } from "@/studio/config";
 import { getProject, saveProject } from "@/studio/store";
 import { transaction } from "@/studio/db";
 import { registerAsset, validateImage, projectMedia } from "@/studio/assets";
@@ -12,7 +12,7 @@ import { boundedBody } from "@/studio/request";
 export const runtime = "nodejs";
 export async function POST(request: Request) {
   try {
-    requireDemoMode();
+    studioMode();
     checkOrigin(request);
     const owner = await actor(request);
     if (Number(request.headers.get("content-length")) > 5_100_000)

@@ -1,5 +1,6 @@
 import { Pool, type PoolClient } from "pg";
 import { StudioError } from "./types";
+import { workerLimits } from "./config";
 
 const singleton = globalThis as typeof globalThis & { vidioPool?: Pool };
 export function database() {
@@ -7,7 +8,7 @@ export function database() {
     throw new StudioError("DATABASE", "PostgreSQL is not configured", 503);
   return (singleton.vidioPool ??= new Pool({
     connectionString: process.env.DATABASE_URL,
-    max: 6,
+    max: workerLimits().concurrency*2+4,
     connectionTimeoutMillis: 5000,
   }));
 }

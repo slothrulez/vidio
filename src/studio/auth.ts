@@ -3,6 +3,9 @@ import { randomUUID } from "node:crypto";
 import { signingKey, requireDemoMode } from "./config";
 import { StudioError } from "./types";
 
+let jwksUrl="";
+let verifier:ReturnType<typeof createRemoteJWKSet>|undefined;
+
 export async function previewSession() {
   requireDemoMode();
   return new SignJWT({})
@@ -58,10 +61,11 @@ export async function oauthActor(request: Request) {
   if (!authorization?.startsWith("Bearer "))
     throw new StudioError("AUTH", "Bearer authentication required", 401);
   try {
+    if (!verifier || jwksUrl!==jwks) {verifier=createRemoteJWKSet(new URL(jwks));jwksUrl=jwks;}
     const { payload } = await jwtVerify(
       authorization.slice(7),
-      createRemoteJWKSet(new URL(jwks)),
-      { issuer, audience, algorithms: ["RS256", "ES256"] },
+      verifier,
+      { issuer, audience, algorithms: ["RS256", "ES256"], requiredClaims: ["sub","exp","iss","aud"] },
     );
     if (
       payload.sub &&

@@ -43,7 +43,7 @@ COZE_PROJECT_ENV=PROD pnpm start
 
 Open `http://localhost:5000/studio`. To run the protocol test, use `pnpm test:mcp` with both processes running. For the isolated database test, create a disposable `vidio_test` database and run `TEST_DATABASE_URL=postgresql://vidio:vidio_local@127.0.0.1:54329/vidio_test pnpm test:integration`. Unit tests require no database: `pnpm test:unit`. Both databases live in the Docker volume; `docker compose down` stops the container but does not delete the volume. Never point the disposable integration test at user data.
 
-The preview uses signed, owner-bound browser sessions, a bounded image uploader, expiring media links, PostgreSQL projects/jobs and a separate queue worker. **MCP requires a bearer token; anonymous access and browser-cookie authentication are not supported on `/mcp`.** Browser projects are scoped to an HTTP-only demo cookie, not an account. Media is stored on the local filesystem and is not production object storage. OAuth authorization-code/PKCE, tenant-bound live provider adapters, durable object storage, a public canonical HTTPS origin, privacy/deletion policy and an approved spending limit remain required before public production use or ChatGPT submission. No live provider execution or ChatGPT developer-mode submission is enabled by this preview.
+The demo uses signed, owner-bound browser sessions, bounded uploads, expiring media links, PostgreSQL and a separate worker. **MCP requires a bearer token; anonymous access and browser-cookie authentication are not supported on `/mcp`.** Demo media stays local; production mode instead uses private S3 and the resumable provider adapter described below. OAuth authorization-code/PKCE, browser sign-in, server-verified human cost consent, privacy/deletion policy, production provisioning and ChatGPT-host verification remain public-launch requirements. No paid calls run in demo mode.
 
 ### Authenticated local MCP client
 
@@ -78,7 +78,114 @@ The canonical tools are:
 | `compose_final_video` | `{ projectId, revision, idempotencyKey?, confirmed: true, segmentIds: unique array of 1–4 integers 1–4 }` | Explicit approval required; queues local composition. |
 | `get_final_video` | `{ projectId: UUID }` | Read-only; returns the owned final asset ID, MIME type and a short-lived signed download URL in MCP result `_meta.media[assetId]`. |
 
-Job tools enqueue asynchronous work and return stable UUIDs; use `create_project` first, then `get_video_job_status` and `get_project`. No provider calls are made in demo mode. `confirmed: true` prevents accidental starts, but is client-declared and **not proof of human approval**; before adding paid provider execution, implement owner-bound, single-use server-side cost consent and a budget. Invalid fields, missing confirmation and cross-owner IDs are rejected. Browser/API contracts and older widget tools (`draft_scripts`, `generate_segments`, `compose_video`, etc.) remain available. Provider credentials stay server-side and are never tool arguments or results. Run `pnpm test:mcp` with the worker and server active for the full protocol/media workflow.
+Job tools enqueue asynchronous work and return stable UUIDs; use `create_project` first, then `get_video_job_status` and `get_project`. The table above describes demo mode. Production generation additionally requires an idempotency key, authenticated ownership, operator opt-in and a daily admission budget. `confirmed: true` is client-declared and **not proof of human approval**; implement owner-bound, single-use cost consent before a public ChatGPT release. Invalid fields, missing confirmation and cross-owner IDs are rejected. Older widget tool names remain available. Provider credentials never become tool arguments/results. Run `pnpm test:mcp` with the demo worker and server active for the full protocol/media workflow.
+
+## Production job lifecycle
+
+This is an opt-in managed execution path, not a replacement of the existing
+LangGraph/Coze website. It reuses PostgreSQL, pg-boss, the Ark video task API and
+FFmpeg. Legacy routes and their contracts are unchanged when `VIDIO_MODE` is unset;
+keep that legacy deployment private. In **demo and production managed modes**,
+unsafe legacy SSE/provider/file/proxy routes return 503 so they cannot bypass
+authentication, ownership or budgets. Production browser sign-in is not included.
+
+### Required production configuration
+
+| Variable | Purpose |
+|---|---|
+| `VIDIO_MODE=production` | Enables authenticated managed jobs; never demo fixtures |
+| `DATABASE_URL` | Same durable PostgreSQL database for Next.js and worker |
+| `VIDIO_PUBLIC_ORIGIN` | Canonical HTTPS origin, without paths/query/credentials |
+| `OAUTH_ISSUER`, `OAUTH_JWKS_URL`, `OAUTH_AUDIENCE` | HTTPS JWT issuer/JWKS and expected resource audience; tokens need `sub`, `exp`, `iss`, `aud`, and `vidio:studio` scope; RS256/ES256 only |
+| `VIDIO_MEDIA_SECRET` | Stable, private signing secret of at least 32 characters; survives restarts |
+| `S3_BUCKET_NAME`, `S3_REGION` | Private managed asset bucket and region |
+| `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Optional **pair**, or use the server's IAM role/default AWS credential chain |
+| `S3_ENDPOINT_URL` | Optional HTTPS endpoint; must support `GetPublicAccessBlock` privacy verification |
+| `ARK_API_KEY`, `VIDEO_MODEL_EP` | Existing server-side Ark credentials/model endpoint; required only for live video jobs |
+| `ARK_BASE_URL` | Optional origin, default `https://ark.cn-beijing.volces.com`; **do not append `/api/v3`** |
+| `VIDIO_PROVIDER_MEDIA_HOSTS` | Comma-separated exact provider CDN hostnames; required for live jobs; no wildcards, redirects or IP URLs |
+| `VIDIO_PAID_GENERATION_ENABLED=true` | Explicit operator permission for paid submissions; off by default |
+| `VIDIO_MAX_PAID_SEGMENTS_PER_OWNER_DAY` | Required 1–100 daily admitted-segment reservation limit; retries reuse reservations, regeneration reserves another segment |
+
+Unset `VIDIO_MCP_LOCAL_AUTH` in production: local tokens/cookies are demo-only.
+Never commit environment files or tokens. Original Coze integrations retain their
+existing configuration (`COZE_BUCKET_ENDPOINT_URL`, `COZE_BUCKET_NAME`, SDK
+credentials); managed S3 uses the separate explicit variables above. Historical
+S3 examples later in this README do not configure this managed backend.
+
+Enable **all four** S3 Block Public Access flags (`BlockPublicAcls`,
+`IgnorePublicAcls`, `BlockPublicPolicy`, `RestrictPublicBuckets`) and disable public
+bucket policies/ACLs. The backend refuses operations if privacy cannot be verified;
+there is no public fallback. IAM needs bucket `s3:GetBucketPublicAccessBlock` and
+object Get/Put/Delete access restricted to `studio/*`. Asset keys use project/asset
+UUIDs, never user paths. Image uploads are PNG/JPEG only, at most 5 MB, with signature
+and dimension checks; generated media is capped at 100 MB per asset. Signed media
+capability URLs and provider image URLs expire after ten minutes. Reacquire through
+`get_project`/`get_final_video`; never log/share query tokens. Signed URLs are bearer
+capabilities: recipients can read them until expiry.
+
+### Deployment and API
+
+Run `pnpm install --frozen-lockfile`, `pnpm db:migrate`, `pnpm build`, then run the
+HTTP process and `pnpm worker` separately with the same production configuration.
+The worker needs the full locked dependencies (including the existing `tsx` runner),
+FFmpeg/FFprobe and a **long-running container/VM**, not a request-scoped serverless
+function. Production assets are shared through S3, so web/worker disks need not be
+shared. Migration `0003` adds owned final-result checkpoints and compound asset
+ownership constraints. Pool size scales with bounded worker concurrency so uploads
+cannot starve lease heartbeats; size deployment replicas to database capacity.
+
+All `/api/studio/*` production routes require a scoped OAuth bearer token. Create a
+project using the existing `create_project` tool. Upload an owned image via
+`POST /api/studio/upload` (multipart `projectId`, `revision`, `image`), or use text-only
+generation. Recognition, draft scripts and voice-preview provider adapters are not
+connected in production and fail explicitly rather than returning fixtures.
+Import reviewed scripts using `PUT /api/studio/projects/{projectId}/scripts`:
+
+```json
+{"revision":0,"scripts":[{"id":1,"script":"Your approved narration.","prompt":"Your approved visual description."}]}
+```
+
+Send `POST /api/studio/jobs` to receive **202 immediately**, a stable `jobId`, and a
+`Location` header. Example (replace the synthetic ID and use the current revision):
+
+```json
+{"operation":"generate_segments","input":{"projectId":"00000000-0000-4000-8000-000000000001","revision":1,"confirmed":true,"idempotencyKey":"your-unique-request-key"}}
+```
+
+Use `operation: "regenerate_segment"` with `segmentId` (1–4, including failed scenes)
+or `operation: "compose_video"` with unique completed `segmentIds`. Script IDs are
+unique and limited to four. `GET /api/studio/jobs/{jobId}` returns the current
+lifecycle `status`, timestamps, bounded errors and segment checkpoints. MCP retains
+its old `status` contract and adds `lifecycleStatus`; REST status uses `completed`
+and `partially_completed`. `POST /api/studio/jobs/{jobId}/retry` returns the same ID
+for active/completed work and only requeues safe failed work within the attempt
+limit. Conflicting idempotency-key reuse returns 409, not another provider job.
+
+Completed scenes and final composition checkpoints survive worker/process restarts.
+The adapter persists `submitting` **before** one paid POST, stores its task ID before
+polling and resumes that same task after recovery. Unknown outcomes are terminal
+`SUBMISSION_UNKNOWN`; new keys cannot bypass reconciliation for that scene. A known
+but unresolved provider task also blocks a new paid submission. Operators must
+reconcile with provider records before clearing the block; never blindly reset
+status or delete task IDs. Explicitly failed provider tasks may be regenerated after
+fresh confirmation. Cancellation stops local work/polling, not necessarily an
+already-submitted provider task; it does not promise a refund.
+
+The managed adapter uses the model's **native audio**, prompted with the approved
+narration, and local FFmpeg concatenation. Separate legacy TTS/BGM/subtitle paths
+remain unchanged in legacy mode; they are not claimed as managed production
+features. Support for native audio must exist on the configured video model.
+Request/poll contracts follow the official [create-task](https://docs.volcengine.com/docs/ark/create-video-generation-task-api?lang=zh)
+and [get-task](https://docs.volcengine.com/docs/ark/get-video-generation-task-api?lang=zh)
+references; provider `expired` is terminal, not a reason to submit again automatically.
+
+Routine verification uses no live credentials/cost: `pnpm test:unit`,
+`TEST_DATABASE_URL=postgresql://.../vidio_test pnpm test:integration`,
+`pnpm test:branding`, `pnpm ts-check`, `pnpm lint:build`, `pnpm build` and
+`git diff --check`. Integration coverage includes an actual killed/restarted
+pg-boss worker, stale-lease fencing, bounded failures, task-ID reuse, owner isolation,
+private S3 mocks, upload validation and signed completed-video retrieval.
 
 The installed stable TypeScript MCP SDK v2 packages are pinned to 2.3.1, MCP Apps to 2.0.3, and schemas use Zod 4. APIs are verified against the official [SDK v2 source](https://github.com/modelcontextprotocol/typescript-sdk), [MCP Apps](https://github.com/modelcontextprotocol/ext-apps), [OpenAI quickstart](https://developers.openai.com/apps-sdk/quickstart), [MCP Apps compatibility](https://developers.openai.com/apps-sdk/mcp-apps-in-chatgpt), and [authentication guidance](https://developers.openai.com/apps-sdk/build/auth). No plugin tutorial or new AI framework is used.
 
@@ -149,7 +256,7 @@ git ls-files | grep .env
 ```bash
 # .env.example（可提交到 GitHub）
 ARK_API_KEY=your_api_key_here
-ARK_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
+ARK_BASE_URL=https://ark.cn-beijing.volces.com
 VIDEO_MODEL_EP=your_video_model_endpoint_here
 
 S3_ACCESS_KEY=your_access_key_here
@@ -183,7 +290,7 @@ S3_ENDPOINT=https://tos-cn-beijing.volces.com
 ```bash
 # 火山引擎 API 配置
 ARK_API_KEY=your_api_key          # 大模型 API 密钥
-ARK_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
+ARK_BASE_URL=https://ark.cn-beijing.volces.com
 VIDEO_MODEL_EP=ep-xxx             # 视频生成模型 endpoint
 
 # 对象存储配置

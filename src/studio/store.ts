@@ -8,10 +8,25 @@ import {
   type StudioJob,
   type JobInput,
   type Operation,
+  type SegmentRecord,
 } from "./types";
-import { requireDemoMode } from "./config";
+import { studioMode } from "./config";
 import { workerLimits } from "./config";
-import { getSegments } from "./lifecycle";
+
+export function segmentFromRow(row: Record<string, unknown>): SegmentRecord {
+  return {
+    id: String(row.id), ordinal: Number(row.ordinal), status: row.status as SegmentRecord["status"],
+    assetId: row.asset_id ? String(row.asset_id) : null,
+    duration: row.duration === null ? null : Number(row.duration),
+    errorCode: row.error_code ? String(row.error_code) : null, error: row.error ? String(row.error) : null,
+    createdAt: new Date(String(row.created_at)).toISOString(), updatedAt: new Date(String(row.updated_at)).toISOString(),
+    completedAt: row.completed_at ? new Date(String(row.completed_at)).toISOString() : null,
+  };
+}
+export async function getSegments(owner: string, jobId: string) {
+  const result = await database().query("SELECT * FROM vidio_job_segments WHERE job_id=$1 AND owner_id=$2 ORDER BY ordinal", [jobId, owner]);
+  return result.rows.map(segmentFromRow);
+}
 
 export async function getProject(
   owner: string,
@@ -47,7 +62,7 @@ export async function createProject(
     ratio: "16:9" | "9:16" | "1:1";
   },
 ) {
-  requireDemoMode();
+  const mode=studioMode();
   return transaction(async (client) => {
     await client.query("SELECT pg_advisory_xact_lock(4112026)");
     const count = await client.query(
@@ -65,7 +80,7 @@ export async function createProject(
       scripts: [],
       segments: [],
       createdAt: new Date().toISOString(),
-      mode: "demo",
+      mode,
     };
     await client.query(
       "INSERT INTO vidio_projects(id,owner_id,data) VALUES($1,$2,$3)",
@@ -81,6 +96,21 @@ export async function listProjects(owner: string) {
     [owner],
   );
   return result.rows.map((row) => projectSchema.parse(row.data));
+}
+export async function replaceScripts(owner:string,id:string,revision:number,scripts:StudioProject["scripts"]) {
+  return transaction(async(client)=>{
+    await client.query("SELECT id FROM vidio_projects WHERE id=$1 AND owner_id=$2 FOR UPDATE",[id,owner]);
+    const project=await getProject(owner,id,client);
+    if (project.activeJobId || project.revision!==revision) throw new StudioError("REVISION","Project changed or a job is active",409);
+    project.scripts=scripts;
+    project.segments=[];
+    project.stage="scripted";
+    project.revision++;
+    delete project.finalAssetId;
+    delete project.voiceAssetId;
+    await saveProject(owner,project,client);
+    return project;
+  });
 }
 
 export async function updateScript(
@@ -147,9 +177,9 @@ export function validateOperation(
     throw new StudioError("STAGE", "Draft scripts first");
   if (
     operation === "regenerate_segment" &&
-    !project.segments.some((item) => item.id === input.segmentId)
+    !project.scripts.some((item) => item.id === input.segmentId)
   )
-    throw new StudioError("SEGMENT", "Choose an existing segment");
+    throw new StudioError("SEGMENT", "Choose an existing scene script");
   if (
     operation === "compose_video" &&
     (!input.segmentIds?.length ||
@@ -198,7 +228,11 @@ export async function startJob(
   operation: Operation,
   input: JobInput,
 ) {
-  requireDemoMode();
+  const mode=studioMode();
+  if (mode === "production" && !["generate_segments","regenerate_segment","compose_video"].includes(operation))
+    throw new StudioError("NOT_CONFIGURED","Recognition, scripts and voice previews are not connected to live providers",503);
+  if (mode === "production" && !input.idempotencyKey)
+    throw new StudioError("IDEMPOTENCY","Production jobs require an idempotencyKey");
   const hash = createHash("sha256")
     .update(JSON.stringify({ operation, ...input, idempotencyKey: undefined }))
     .digest("hex");
@@ -223,6 +257,7 @@ export async function startJob(
       [input.projectId, owner],
     );
     const project = await getProject(owner, input.projectId, client);
+    if (project.mode !== mode) throw new StudioError("MODE","Project execution mode does not match the server",409);
     if (project.revision !== input.revision)
       throw new StudioError(
         "REVISION",
@@ -232,12 +267,23 @@ export async function startJob(
     if (project.activeJobId)
       throw new StudioError("BUSY", "A project job is already active", 409);
     validateOperation(operation, project, input);
+    if (mode === "production" && operation !== "compose_video") {
+      const ordinals=operation==="regenerate_segment" ? [input.segmentId!] : project.scripts.map(script=>script.id);
+      const unresolved=await client.query("SELECT id FROM vidio_job_segments WHERE project_id=$1 AND owner_id=$2 AND ordinal=ANY($3::int[]) AND (error_code='SUBMISSION_UNKNOWN' OR (provider_task_id IS NOT NULL AND status='failed' AND error_code IN ('TIMEOUT','POLL','STORAGE','WORKER_ERROR','CANCELLED'))) LIMIT 1",[project.id,owner,ordinals]);
+      if (unresolved.rows.length) throw new StudioError("RECONCILIATION","Reconcile the previous provider submission before approving another paid request for this scene",409);
+      const dailyLimit=Number(process.env.VIDIO_MAX_PAID_SEGMENTS_PER_OWNER_DAY);
+      if (process.env.VIDIO_PAID_GENERATION_ENABLED !== "true" || !Number.isInteger(dailyLimit) || dailyLimit<1 || dailyLimit>100)
+        throw new StudioError("BUDGET","Paid generation requires explicit operator opt-in and a daily segment budget",503);
+      const reserved=await client.query("SELECT count(*)::int AS n FROM vidio_job_segments WHERE owner_id=$1 AND created_at>=date_trunc('day',now())",[owner]);
+      const requested=operation === "regenerate_segment" ? 1 : project.scripts.length;
+      if (reserved.rows[0].n+requested>dailyLimit) throw new StudioError("BUDGET","Daily approved segment budget exhausted",429);
+    }
     const count = await client.query(
       "SELECT count(*)::int AS n FROM vidio_jobs WHERE owner_id=$1",
       [owner],
     );
     if (count.rows[0].n >= 100)
-      throw new StudioError("LIMIT", "Preview job limit reached", 429);
+      throw new StudioError("LIMIT", "Job history limit reached", 429);
     const id = randomUUID();
     const result = await client.query(
       "INSERT INTO vidio_jobs(id,project_id,owner_id,operation,input,input_hash,idempotency_key,max_attempts) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *",

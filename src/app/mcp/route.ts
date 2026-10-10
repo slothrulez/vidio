@@ -1,7 +1,7 @@
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/server";
 import { mcpActor, mcpChallenge } from "@/studio/mcp-auth";
 import { createMcpServer } from "@/studio/mcp";
-import { checkOrigin, publicOrigin, requireDemoMode } from "@/studio/config";
+import { checkOrigin, publicOrigin, studioMode } from "@/studio/config";
 import { StudioError } from "@/studio/types";
 import { safeError } from "@/studio/service";
 import { boundedBody } from "@/studio/request";
@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   try {
     checkOrigin(request);
-    requireDemoMode();
+    studioMode();
     const host = request.headers.get("host");
     if (
       host &&

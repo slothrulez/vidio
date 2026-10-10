@@ -1,10 +1,11 @@
 import { z } from "zod";
 
 export const scriptSchema = z.object({
-  id: z.number().int().positive(),
+  id: z.number().int().min(1).max(4),
   script: z.string().min(1).max(1000),
   prompt: z.string().max(1500),
 });
+export const scriptsSchema=z.array(scriptSchema.strict()).max(4).refine(scripts=>new Set(scripts.map(script=>script.id)).size===scripts.length,"Scene IDs must be unique");
 export const projectSchema = z.object({
   id: z.uuid(),
   name: z.string().min(1).max(100),
@@ -13,7 +14,7 @@ export const projectSchema = z.object({
   ratio: z.enum(["16:9", "9:16", "1:1"]),
   stage: z.enum(["new", "identified", "scripted", "generated", "done"]),
   features: z.array(z.string()),
-  scripts: z.array(scriptSchema),
+  scripts: scriptsSchema,
   segments: z.array(
     z.object({
       id: z.number().int(),

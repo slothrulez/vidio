@@ -2,7 +2,7 @@ import { z } from "zod";
 import { verifyMediaToken, readAsset } from "@/studio/assets";
 import { StudioError } from "@/studio/types";
 import { safeError } from "@/studio/service";
-import { requireDemoMode } from "@/studio/config";
+import { studioMode } from "@/studio/config";
 
 export const runtime = "nodejs";
 export async function GET(
@@ -10,7 +10,7 @@ export async function GET(
   { params }: { params: Promise<{ assetId: string }> },
 ) {
   try {
-    requireDemoMode();
+    const mode=studioMode();
     const id = z.uuid().parse((await params).assetId),
       url = new URL(request.url);
     const owner = await verifyMediaToken(
@@ -26,7 +26,7 @@ export async function GET(
       "Content-Length": String(size),
     };
     if (url.searchParams.get("download") === "1")
-      headers["Content-Disposition"] = 'attachment; filename="vidio-demo.mp4"';
+      headers["Content-Disposition"] = `attachment; filename="vidio${mode === "demo" ? "-demo" : ""}.mp4"`;
     const range = request.headers.get("range");
     if (range) {
       const match = /^bytes=(\d+)-(\d*)$/.exec(range);

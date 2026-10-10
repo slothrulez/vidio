@@ -1,6 +1,6 @@
 import { StudioError } from "./types";
 
-export async function boundedBody(request: Request, limit: number) {
+export async function boundedBody(request: Pick<Request,"headers"|"body">, limit: number) {
   if (Number(request.headers.get("content-length")) > limit)
     throw new StudioError("SIZE", "Request too large", 413);
   if (!request.body) return new Uint8Array(0);

@@ -15,7 +15,7 @@ import {
   type ToolResponse,
   StudioError,
 } from "./types";
-import { requireDemoMode } from "./config";
+import { studioMode } from "./config";
 
 export const schemas = {
   create_project: z
@@ -62,16 +62,16 @@ export async function executeTool(
   name: ToolName,
   args: unknown,
 ): Promise<ToolResponse> {
-  requireDemoMode();
+  const mode=studioMode();
   let project, job, projects;
-  let message =
-    "Demo only: recognition and scripts are fixtures; voice is a sample tone and videos are local sample media. No AI provider was called.";
+  let message = mode === "demo" ?
+    "Demo only: recognition and scripts are fixtures; voice is a sample tone and videos are local sample media. No AI provider was called." : "Production studio: owned projects, durable jobs and private media.";
   if (operations.some((operation) => operation === name)) {
     const input = jobInputSchema.parse(args);
     job = await startJob(owner, name as (typeof operations)[number], input);
     project = await getProject(owner, input.projectId);
-    message =
-      "Demo job queued. Poll get_job and get_project for durable progress. No paid generation.";
+    message = mode === "demo" ?
+      "Demo job queued. Poll get_job and get_project for durable progress. No paid generation." : "Job queued. Poll get_job and get_project for durable progress.";
   } else if (name === "create_project")
     project = await createProject(owner, schemas.create_project.parse(args));
   else if (name === "list_projects") {
@@ -95,7 +95,7 @@ export async function executeTool(
   else if (name === "update_script")
     project = await updateScript(owner, schemas.update_script.parse(args));
   return {
-    structuredContent: { mode: "demo", project, job, projects, message },
+    structuredContent: { mode, project, job, projects, message },
     _meta: project ? { media: await projectMedia(owner, project) } : undefined,
   };
 }

@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 export function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   if (
-    process.env.VIDIO_MODE === "demo" &&
+    ["demo", "production"].includes(process.env.VIDIO_MODE ?? "") &&
     pathname.startsWith("/api/") &&
     !pathname.startsWith("/api/studio/") &&
     !pathname.startsWith("/api/media/")
@@ -12,7 +12,7 @@ export function proxy(request: NextRequest) {
       {
         success: false,
         error:
-          "Legacy provider and file APIs are disabled in demo mode. Use the safe studio preview.",
+          "Legacy provider and file APIs are disabled in managed studio modes. Use the authenticated studio job APIs.",
       },
       { status: 503 },
     );

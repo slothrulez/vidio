@@ -166,6 +166,7 @@ export function Studio({
     segmentIds?: number[];
   }>();
   const busy = working || job?.status === "queued" || job?.status === "running";
+  const production=(project?.mode ?? incoming?.structuredContent.mode)==="production";
   const hasEdits = Object.values(dirty).some(Boolean);
   const apply = useCallback(
     (result: ToolResponse) => {
@@ -360,7 +361,7 @@ export function Studio({
             </span>
           </div>
           <Badge className="bg-purple-100 text-purple-800 border-0 hover:bg-purple-100">
-            Interactive demo
+            {production ? "Production studio" : "Interactive demo"}
           </Badge>
         </div>
       </header>
@@ -414,9 +415,7 @@ export function Studio({
         <div className="rounded-xl border border-purple-100 bg-purple-50/80 px-4 py-3 text-xs sm:text-sm text-purple-900 flex gap-3">
           <Sparkles className="shrink-0 mt-0.5" size={16} />
           <p>
-            <strong>A safe preview, not live AI generation.</strong> Recognition
-            and scripts are fixtures. Audio is a sample tone; videos are
-            two-second local samples. No paid providers or credits are used.
+            {production ? <><strong>Live provider mode.</strong> Generation requires confirmation and consumes your approved daily segment allowance. Recognition and draft-script providers are not yet connected; import reviewed scripts through the authenticated API.</> : <><strong>A safe preview, not live AI generation.</strong> Recognition and scripts are fixtures. Audio is a sample tone; videos are two-second local samples. No paid providers or credits are used.</>}
           </p>
         </div>
         {error && (
@@ -862,7 +861,7 @@ export function Studio({
                   <Button asChild className="bg-[#7543cf] hover:bg-[#6332b8]">
                     <a
                       href={`${finalUrl}&download=1`}
-                      download="vidio-demo.mp4"
+                      download={production ? "vidio.mp4" : "vidio-demo.mp4"}
                       rel="noreferrer"
                     >
                       <Download size={16} />
@@ -891,13 +890,13 @@ export function Studio({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Run this demo step?</AlertDialogTitle>
+            <AlertDialogTitle>{production ? "Approve this step?" : "Run this demo step?"}</AlertDialogTitle>
             <AlertDialogDescription>
-              {confirmation?.operation === "preview_voice"
+              {production ? "Generation submits paid provider tasks within your operator-approved daily allowance. Composition processes your completed owned media. Your saved script revision will be used." : <>{confirmation?.operation === "preview_voice"
                 ? "This produces a short sample tone, not spoken narration."
                 : "This creates clearly labelled local sample media, not AI-generated scenes."}{" "}
               No paid provider or credits are used. Your current saved script
-              revision will be used.
+              revision will be used.</>}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -914,7 +913,7 @@ export function Studio({
                 setConfirmation(undefined);
               }}
             >
-              Run demo
+              {production ? "Approve and run" : "Run demo"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

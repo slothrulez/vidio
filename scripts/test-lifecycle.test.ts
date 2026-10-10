@@ -4,7 +4,12 @@ import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { database } from "../src/studio/db";
 import { createProject,getProject,getJob,startJob,saveProject } from "../src/studio/store";
-import { claimJob,heartbeat,completeJob,failJob,recoverJobs,completedSegment,persistSegment,providerCheckpoint,retryJob } from "../src/studio/lifecycle";
+import { claimJob,heartbeat,completeJob,failJob,recoverJobs,completedSegment,persistSegment,providerCheckpoint,retryJob,persistComposition } from "../src/studio/lifecycle";
+import { runJob } from "../src/worker";
+import { fork,type ChildProcess } from "node:child_process";
+import { once } from "node:events";
+import { setTimeout as delay } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
 import { registerAsset,readAsset } from "../src/studio/assets";
 import { StudioError } from "../src/studio/types";
 
@@ -16,6 +21,7 @@ const owner=`test-lifecycle-${randomUUID()}`;
 before(async()=>{
   await database().query(await readFile("migrations/0001_studio.sql","utf8"));
   await database().query(await readFile("migrations/0002_job_lifecycle.sql","utf8"));
+  await database().query(await readFile("migrations/0003_result_ownership.sql","utf8"));
 });
 after(async()=>{
   await database().query("DELETE FROM vidio_projects WHERE owner_id=$1",[owner]);
@@ -120,4 +126,60 @@ test("deadlines and cross-owner segment writes are rejected",async()=>{
   await assert.rejects(()=>heartbeat(claim),{code:"TIMEOUT"});
   await failJob(claim,new StudioError("TIMEOUT","private detail"));
   assert.equal((await getJob(owner,job.id)).lifecycleStatus,"failed");
+});
+test("composition checkpoint resumes without producing another final asset",async()=>{
+  const {job,project}=await fixture();
+  await database().query("UPDATE vidio_jobs SET status='cancelled' WHERE id=$1",[job.id]);
+  delete project.activeJobId;
+  const assetId=await registerAsset(owner,project.id,"video/mp4",Buffer.from("owned-composition-fixture"));
+  project.segments=[{id:1,assetId,duration:2,script:"Scene 1"}];
+  await saveProject(owner,project);
+  const compose=await startJob(owner,"compose_video",{projectId:project.id,revision:project.revision,confirmed:true,segmentIds:[1],idempotencyKey:randomUUID()});
+  const first=(await claimJob(compose.id))!;
+  await persistComposition(first,assetId);
+  await database().query("UPDATE vidio_jobs SET lease_until=now()-interval '1 second' WHERE id=$1",[compose.id]);
+  await recoverJobs();
+  await runJob(compose.id,async()=>{throw new Error("Composition must not run twice");});
+  assert.equal((await getJob(owner,compose.id)).lifecycleStatus,"completed");
+  assert.equal((await getProject(owner,project.id)).finalAssetId,assetId);
+  assert.equal((await retryJob(owner,compose.id)).id,compose.id);
+});
+test("pg-boss survives a killed worker process and reuses its completed segment",{timeout:30_000},async()=>{
+  const {job}=await fixture();
+  let child:ChildProcess|undefined;
+  const launch=()=>fork(fileURLToPath(new URL("./fixtures/lifecycle-worker.ts",import.meta.url)),[],{execArgv:["--import","tsx"],env:{...process.env,DATABASE_URL:url,TEST_JOB_ID:job.id},stdio:["ignore","ignore","pipe","ipc"]});
+  try {
+    child=launch();
+    let stderr="";
+    child.stderr?.on("data",chunk=>{stderr+=String(chunk).slice(0,500);});
+    const partial=new Promise<void>((resolve,reject)=>{
+      child!.on("message",message=>{if (typeof message==="object" && message!==null && "phase" in message && message.phase==="partial") resolve();});
+      child!.once("exit",()=>reject(new Error(`Worker stopped before checkpoint: ${stderr}`)));
+    });
+    await Promise.race([partial,delay(12_000,undefined,{ref:false}).then(()=>{throw new Error("Worker checkpoint timed out");})]);
+    const before=await getJob(owner,job.id);
+    assert.equal(before.lifecycleStatus,"partially_completed");
+    const assetId=before.segments?.[0].assetId;
+    assert.ok(assetId);
+    const exit=once(child,"exit");
+    child.kill("SIGKILL");
+    await exit;
+    await database().query("UPDATE vidio_jobs SET lease_until=now()-interval '1 second' WHERE id=$1",[job.id]);
+    child=launch();
+    let state=await getJob(owner,job.id);
+    const deadline=Date.now()+12_000;
+    while (state.lifecycleStatus!=="completed" && Date.now()<deadline) {
+      await delay(100);
+      state=await getJob(owner,job.id);
+    }
+    assert.equal(state.lifecycleStatus,"completed");
+    assert.equal(state.segments?.[0].assetId,assetId);
+    assert.equal(state.attempts,2);
+  } finally {
+    if (child?.exitCode===null && child.signalCode===null) {
+      const exit=once(child,"exit");
+      child.kill("SIGTERM");
+      await Promise.race([exit,delay(5000,undefined,{ref:false}).then(()=>child?.kill("SIGKILL"))]);
+    }
+  }
 });

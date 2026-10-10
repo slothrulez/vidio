@@ -111,7 +111,7 @@ test("media stages require confirmation, scripts, and owned unique segment selec
       projectId: project.id,
       revision: 0,
       confirmed: true,
-      segmentId: 1,
+      segmentId: 2,
     }),
   );
 });
