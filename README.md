@@ -27,8 +27,7 @@ docker compose up -d --wait
 Create a **local, ignored** `.env.local` file. Generate the secret yourself; never commit or print its value:
 
 ```bash
-printf 'DATABASE_URL=postgresql://vidio:vidio_local@127.0.0.1:54329/vidio\nVIDIO_MODE=demo\nVIDIO_PUBLIC_ORIGIN=http://localhost:5000\nVIDIO_PREVIEW_SECRET=%s\n' "$(openssl rand -hex 32)" > .env.local
-chmod 600 .env.local
+(umask 077; set -C; printf 'DATABASE_URL=postgresql://vidio:vidio_local@127.0.0.1:54329/vidio\nVIDIO_MODE=demo\nVIDIO_PUBLIC_ORIGIN=http://localhost:5000\nVIDIO_PREVIEW_SECRET=%s\n' "$(openssl rand -hex 32)" > .env.local)
 pnpm db:migrate
 pnpm build:widget
 pnpm exec next build
