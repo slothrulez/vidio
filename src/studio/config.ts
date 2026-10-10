@@ -1,5 +1,20 @@
 import { StudioError } from "./types";
 
+export function workerLimits() {
+  function integer(name: string, fallback: number, min: number, max: number) {
+    const value = Number(process.env[name] ?? fallback);
+    if (!Number.isInteger(value) || value < min || value > max)
+      throw new StudioError("CONFIGURATION", `Invalid ${name}`, 503);
+    return value;
+  }
+  return {
+    concurrency: integer("VIDIO_WORKER_CONCURRENCY", 2, 1, 8),
+    leaseSeconds: integer("VIDIO_WORKER_LEASE_SECONDS", 60, 15, 300),
+    timeoutSeconds: integer("VIDIO_JOB_TIMEOUT_SECONDS", 900, 60, 3600),
+    maxAttempts: integer("VIDIO_JOB_MAX_ATTEMPTS", 3, 1, 5),
+  };
+}
+
 export function requireDemoMode() {
   if (process.env.VIDIO_MODE !== "demo") {
     throw new StudioError(

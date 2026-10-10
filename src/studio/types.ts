@@ -27,9 +27,22 @@ export const projectSchema = z.object({
   finalAssetId: z.uuid().optional(),
   activeJobId: z.uuid().optional(),
   createdAt: z.string(),
-  mode: z.literal("demo"),
+  mode: z.enum(["demo", "production"]),
 });
 export type StudioProject = z.infer<typeof projectSchema>;
+export const segmentRecordSchema = z.object({
+  id: z.uuid(),
+  ordinal: z.number().int(),
+  status: z.enum(["queued", "running", "submitting", "submitted", "completed", "failed"]),
+  assetId: z.uuid().nullable(),
+  duration: z.number().nullable(),
+  errorCode: z.string().nullable(),
+  error: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  completedAt: z.string().nullable(),
+});
+export type SegmentRecord = z.infer<typeof segmentRecordSchema>;
 export const jobSchema = z.object({
   id: z.uuid(),
   projectId: z.uuid(),
@@ -38,6 +51,14 @@ export const jobSchema = z.object({
   progress: z.number(),
   error: z.string().nullable(),
   createdAt: z.string(),
+  lifecycleStatus: z.enum(["queued", "running", "partially_completed", "completed", "failed", "cancelled"]).optional(),
+  updatedAt: z.string().optional(),
+  startedAt: z.string().nullable().optional(),
+  completedAt: z.string().nullable().optional(),
+  attempts: z.number().int().optional(),
+  retryable: z.boolean().optional(),
+  errorCode: z.string().nullable().optional(),
+  segments: z.array(segmentRecordSchema).optional(),
 });
 export type StudioJob = z.infer<typeof jobSchema>;
 export const jobInputSchema = z
@@ -61,7 +82,7 @@ export const operations = [
 ] as const;
 export type Operation = (typeof operations)[number];
 export const toolOutputSchema = z.object({
-  mode: z.literal("demo"),
+  mode: z.enum(["demo", "production"]),
   project: projectSchema.optional(),
   job: jobSchema.optional(),
   projects: z.array(projectSchema).optional(),

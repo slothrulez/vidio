@@ -10,6 +10,8 @@ import {
   type Operation,
 } from "./types";
 import { requireDemoMode } from "./config";
+import { workerLimits } from "./config";
+import { getSegments } from "./lifecycle";
 
 export async function getProject(
   owner: string,
@@ -167,10 +169,17 @@ export function jobFromRow(row: Record<string, unknown>): StudioJob {
     id: String(row.id),
     projectId: String(row.project_id),
     operation: String(row.operation),
-    status: row.status as StudioJob["status"],
+    status: (row.status === "partially_completed" ? "running" : row.status) as StudioJob["status"],
     progress: Number(row.progress),
     error: row.error ? String(row.error) : null,
     createdAt: new Date(String(row.created_at)).toISOString(),
+    lifecycleStatus: (row.status === "succeeded" ? "completed" : row.status) as StudioJob["lifecycleStatus"],
+    updatedAt: new Date(String(row.updated_at ?? row.created_at)).toISOString(),
+    startedAt: row.started_at ? new Date(String(row.started_at)).toISOString() : null,
+    completedAt: row.completed_at ? new Date(String(row.completed_at)).toISOString() : null,
+    attempts: Number(row.attempts),
+    retryable: Boolean(row.retryable),
+    errorCode: row.error_code ? String(row.error_code) : null,
   };
 }
 
@@ -181,7 +190,7 @@ export async function getJob(owner: string, id: string) {
   );
   if (!result.rows.length)
     throw new StudioError("NOT_FOUND", "Job not found", 404);
-  return jobFromRow(result.rows[0]);
+  return { ...jobFromRow(result.rows[0]), segments: await getSegments(owner,id) };
 }
 
 export async function startJob(
@@ -231,9 +240,13 @@ export async function startJob(
       throw new StudioError("LIMIT", "Preview job limit reached", 429);
     const id = randomUUID();
     const result = await client.query(
-      "INSERT INTO vidio_jobs(id,project_id,owner_id,operation,input,input_hash,idempotency_key) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *",
-      [id, project.id, owner, operation, JSON.stringify(input), hash, key],
+      "INSERT INTO vidio_jobs(id,project_id,owner_id,operation,input,input_hash,idempotency_key,max_attempts) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *",
+      [id, project.id, owner, operation, JSON.stringify(input), hash, key, workerLimits().maxAttempts],
     );
+    if (operation === "generate_segments" || operation === "regenerate_segment") {
+      for (const script of project.scripts.filter((script) => operation === "generate_segments" || script.id === input.segmentId))
+        await client.query("INSERT INTO vidio_job_segments(id,job_id,project_id,owner_id,ordinal,script) VALUES($1,$2,$3,$4,$5,$6)", [randomUUID(),id,project.id,owner,script.id,JSON.stringify(script)]);
+    }
     project.activeJobId = id;
     await saveProject(owner, project, client);
     return jobFromRow(result.rows[0]);
@@ -242,7 +255,7 @@ export async function startJob(
 
 export async function cancelJob(owner: string, id: string) {
   await database().query(
-    "UPDATE vidio_jobs SET cancel_requested=true WHERE id=$1 AND owner_id=$2 AND status IN ('queued','running')",
+    "UPDATE vidio_jobs SET cancel_requested=true,updated_at=now() WHERE id=$1 AND owner_id=$2 AND status IN ('queued','running','partially_completed')",
     [id, owner],
   );
   return getJob(owner, id);

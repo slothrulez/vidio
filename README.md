@@ -325,6 +325,31 @@ import { Card, CardContent } from '@/components/ui/card';
 
 ## 参考文档
 
+### Durable job lifecycle
+
+Run `pnpm db:migrate` before starting the HTTP server and `pnpm worker`.
+The existing PostgreSQL/pg-boss infrastructure is retained. Migration `0002`
+adds owned per-job segment records, timestamps, error codes, provider task
+checkpoints and fenced worker leases. Each completed segment is saved immediately;
+an interrupted worker resumes it instead of regenerating it. Unknown paid
+submission outcomes require reconciliation and are never automatically resubmitted.
+
+Job responses add `lifecycleStatus` (`queued`, `running`, `partially_completed`,
+`completed`, `failed`, `cancelled`) and segment records. The existing `status`
+contract remains compatible (`running` for partial progress, `succeeded` for
+completion). PostgreSQL is the source of truth across browser refreshes and restarts.
+
+Worker limits: `VIDIO_WORKER_CONCURRENCY` (default 2, maximum 8),
+`VIDIO_WORKER_LEASE_SECONDS` (default 60, range 15–300),
+`VIDIO_JOB_TIMEOUT_SECONDS` (default 900, range 60–3600), and
+`VIDIO_JOB_MAX_ATTEMPTS` (default 3, maximum 5). Retries use bounded backoff.
+Keep the separate worker on a long-running host with FFmpeg, FFprobe and access
+to the same PostgreSQL database as Next.js; it is not a request-scoped Function.
+
+Run mocked failure/recovery/ownership checks with a disposable database:
+`TEST_DATABASE_URL=postgresql://.../vidio_test pnpm test:integration`.
+Live providers remain disabled in demo mode.
+
 - [Next.js 官方文档](https://nextjs.org/docs)
 - [shadcn/ui 组件文档](https://ui.shadcn.com)
 - [Tailwind CSS 文档](https://tailwindcss.com/docs)

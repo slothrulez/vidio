@@ -14,7 +14,7 @@
     "validate": "pnpm run ts-check && pnpm run lint:build",
     "test:branding": "node --test scripts/test-branding.mjs",
     "test:unit": "tsx --test scripts/test-contracts.test.ts scripts/test-studio.test.ts scripts/test-mcp-auth.test.ts",
-    "test:integration": "tsx --test scripts/test-persistence.test.ts",
+    "test:integration": "tsx --test --test-concurrency=1 scripts/test-persistence.test.ts scripts/test-lifecycle.test.ts",
     "test:mcp": "tsx scripts/test-mcp.ts",
     "test:mcp:identification": "tsx scripts/test-mcp-identification.ts",
     "mcp:token": "tsx scripts/mcp-token.ts",

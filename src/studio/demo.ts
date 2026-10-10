@@ -3,7 +3,7 @@ import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { database } from "./db";
-import { assetPath, registerAsset, readAsset } from "./assets";
+import { registerAsset, readAsset } from "./assets";
 import { requireDemoMode } from "./config";
 import {
   StudioError,
@@ -13,17 +13,24 @@ import {
 } from "./types";
 
 const run = promisify(execFile);
+export type ExecutionContext = {
+  signal: AbortSignal;
+  checkpoint: (progress: number) => Promise<void>;
+  segment: (ordinal: number, produce: () => Promise<StudioProject["segments"][number]>) => Promise<StudioProject["segments"][number]>;
+};
 export async function executeDemo(
   owner: string,
   jobId: string,
   operation: Operation,
   input: JobInput,
   project: StudioProject,
+  context?: ExecutionContext,
 ) {
   requireDemoMode();
-  const workspace = path.join(process.cwd(), ".vidio", "jobs", jobId);
+  const workspace = path.join(process.cwd(), ".vidio", "jobs", jobId, crypto.randomUUID());
   await mkdir(workspace, { recursive: true, mode: 0o700 });
   async function checkpoint(progress: number) {
+    if (context) return context.checkpoint(progress);
     const result = await database().query(
       "SELECT cancel_requested FROM vidio_jobs WHERE id=$1 AND owner_id=$2",
       [jobId, owner],
@@ -31,7 +38,7 @@ export async function executeDemo(
     if (result.rows[0]?.cancel_requested)
       throw new StudioError("CANCELLED", "Job cancelled");
     await database().query(
-      "UPDATE vidio_jobs SET progress=$2,lease_until=now()+interval '120 seconds' WHERE id=$1",
+      "UPDATE vidio_jobs SET progress=greatest(progress,$2) WHERE id=$1 AND status IN ('running','partially_completed')",
       [jobId, progress],
     );
   }
@@ -40,6 +47,7 @@ export async function executeDemo(
     await run("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", ...args], {
       timeout: 45000,
       maxBuffer: 100_000,
+      signal: context?.signal,
     });
   }
   async function clip(id: number) {
@@ -165,13 +173,13 @@ export async function executeDemo(
     } else if (operation === "generate_segments") {
       project.segments = [];
       for (const script of project.scripts) {
-        project.segments.push(await clip(script.id));
+        project.segments.push(context ? await context.segment(script.id, () => clip(script.id)) : await clip(script.id));
         await checkpoint(20 + script.id * 15);
       }
       project.stage = "generated";
       delete project.finalAssetId;
     } else if (operation === "regenerate_segment") {
-      const segment = await clip(input.segmentId!);
+      const segment = context ? await context.segment(input.segmentId!, () => clip(input.segmentId!)) : await clip(input.segmentId!);
       project.segments = project.segments.map((item) =>
         item.id === segment.id ? segment : item,
       );
@@ -181,13 +189,18 @@ export async function executeDemo(
       const sources = input.segmentIds!.map(
         (id) => project.segments.find((item) => item.id === id)!,
       );
-      for (const source of sources) await readAsset(owner, source.assetId);
+      const paths: string[] = [];
+      for (const source of sources) {
+        const file = path.join(workspace, `${source.id}.mp4`);
+        await writeFile(file, (await readAsset(owner, source.assetId)).buffer);
+        paths.push(file);
+      }
       const list = path.join(workspace, "concat.txt"),
         output = path.join(workspace, "final.mp4");
       await writeFile(
         list,
-        sources
-          .map((source) => `file '${assetPath(source.assetId)}'`)
+        paths
+          .map((file) => `file '${file}'`)
           .join("\n"),
       );
       await ffmpeg([

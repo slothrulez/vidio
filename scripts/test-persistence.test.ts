@@ -29,6 +29,7 @@ after(async () => {
 
 test("durable owned projects/jobs enforce revisions, concurrency, idempotency and cancellation", async () => {
   await database().query(await readFile("migrations/0001_studio.sql", "utf8"));
+  await database().query(await readFile("migrations/0002_job_lifecycle.sql", "utf8"));
   const project = await createProject(owner, {
     name: "Fixture",
     language: "english",
