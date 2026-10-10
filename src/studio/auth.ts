@@ -15,7 +15,7 @@ export async function previewSession() {
     .sign(signingKey());
 }
 
-export async function actor(request: Request, allowAnonymousDemo = false) {
+export async function actor(request: Request) {
   const cookie = request.headers
     .get("cookie")
     ?.split(";")
@@ -35,13 +35,16 @@ export async function actor(request: Request, allowAnonymousDemo = false) {
         /* Invalid sessions cannot access another workspace. */
       }
     }
-    if (allowAnonymousDemo) return "synthetic-connector-demo";
     throw new StudioError(
       "AUTH",
       "Open the studio to start a preview session",
       401,
     );
   }
+  return oauthActor(request);
+}
+
+export async function oauthActor(request: Request) {
   const issuer = process.env.OAUTH_ISSUER,
     jwks = process.env.OAUTH_JWKS_URL,
     audience = process.env.OAUTH_AUDIENCE;

@@ -1,5 +1,5 @@
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/server";
-import { actor } from "@/studio/auth";
+import { mcpActor, mcpChallenge } from "@/studio/mcp-auth";
 import { createMcpServer } from "@/studio/mcp";
 import { checkOrigin, publicOrigin, requireDemoMode } from "@/studio/config";
 import { StudioError } from "@/studio/types";
@@ -22,7 +22,7 @@ export async function POST(request: Request) {
       ].includes(host)
     )
       throw new StudioError("HOST", "Host is not permitted", 403);
-    const owner = await actor(request, true);
+    const owner = await mcpActor(request);
     const body = JSON.parse(
       new TextDecoder().decode(await boundedBody(request, 20_000)),
     );
@@ -39,7 +39,10 @@ export async function POST(request: Request) {
     }
   } catch (error) {
     const failure = safeError(error);
-    return Response.json(failure.body, { status: failure.status });
+    return Response.json(failure.body, {
+      status: failure.status,
+      headers: failure.status === 401 ? { "WWW-Authenticate": mcpChallenge() } : undefined,
+    });
   }
 }
 export function GET() {

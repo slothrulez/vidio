@@ -6,12 +6,14 @@ import {
 } from "@modelcontextprotocol/ext-apps/server";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { schemas, executeTool, safeError, type ToolName } from "./service";
+import { safeError } from "./service";
+import { mcpSchemas, executeMcpTool, type McpToolName } from "./mcp-contracts";
+import { mcpScope } from "./mcp-auth";
 import { toolOutputSchema } from "./types";
 import { publicOrigin } from "./config";
 
 export const widgetUri = "ui://vidio/studio-v1.html";
-const titles: Record<ToolName, string> = {
+const titles: Record<McpToolName, string> = {
   create_project: "Create a demo project",
   list_projects: "List demo projects",
   get_project: "Read a demo project",
@@ -22,6 +24,7 @@ const titles: Record<ToolName, string> = {
   update_script: "Edit a demo script",
   identify_product: "Identify sample product",
   draft_scripts: "Draft fixture scripts",
+  generate_scripts: "Generate product scripts",
   preview_voice: "Preview sample audio tone",
   generate_segments: "Generate local sample scenes",
   regenerate_segment: "Regenerate one sample scene",
@@ -29,9 +32,9 @@ const titles: Record<ToolName, string> = {
 };
 export function createMcpServer(owner: string) {
   const server = new McpServer({ name: "vidio", version: "0.1.0" });
-  for (const name of Object.keys(schemas) as ToolName[]) {
+  for (const name of Object.keys(mcpSchemas) as McpToolName[]) {
     const metadata: Record<string, unknown> = {
-      securitySchemes: [{ type: "noauth" }],
+      securitySchemes: [{ type: "oauth2", scopes: [mcpScope] }],
     };
     if (name === "render_project") {
       metadata.ui = { resourceUri: widgetUri };
@@ -42,8 +45,8 @@ export function createMcpServer(owner: string) {
       name,
       {
         title: titles[name],
-        description: `${titles[name]}. DEMO ONLY: no AI/provider generation. Uses fixture recognition/scripts, sample tones and local two-second videos. Job tools require the current project revision; generation/composition require confirmed=true. Never provide private or sensitive content to this anonymous synthetic demo.`,
-        inputSchema: schemas[name],
+        description: `${titles[name]}. Authenticated DEMO ONLY: no AI/provider generation. Uses fixture recognition/scripts, sample tones and local two-second videos. Job tools require the current project revision; generation/composition require confirmed=true. Use synthetic test data.`,
+        inputSchema: mcpSchemas[name],
         outputSchema: toolOutputSchema,
         annotations: {
           readOnlyHint: [
@@ -61,7 +64,7 @@ export function createMcpServer(owner: string) {
       },
       async (args: unknown) => {
         try {
-          const result = await executeTool(owner, name, args);
+          const result = await executeMcpTool(owner, name, args);
           return {
             ...result,
             content: [
@@ -72,6 +75,7 @@ export function createMcpServer(owner: string) {
           const failure = safeError(error);
           return {
             isError: true,
+            structuredContent: { mode: "demo", message: failure.body.error.message, error: failure.body.error },
             content: [
               { type: "text" as const, text: failure.body.error.message },
             ],

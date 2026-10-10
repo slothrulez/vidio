@@ -27,7 +27,7 @@ docker compose up -d --wait
 Create a **local, ignored** `.env.local` file. Generate the secret yourself; never commit or print its value:
 
 ```bash
-(umask 077; set -C; printf 'DATABASE_URL=postgresql://vidio:vidio_local@127.0.0.1:54329/vidio\nVIDIO_MODE=demo\nVIDIO_PUBLIC_ORIGIN=http://localhost:5000\nVIDIO_PREVIEW_SECRET=%s\n' "$(openssl rand -hex 32)" > .env.local)
+(umask 077; set -C; printf 'DATABASE_URL=postgresql://vidio:vidio_local@127.0.0.1:54329/vidio\nVIDIO_MODE=demo\nVIDIO_MCP_LOCAL_AUTH=true\nVIDIO_PUBLIC_ORIGIN=http://localhost:5000\nVIDIO_PREVIEW_SECRET=%s\n' "$(openssl rand -hex 32)" > .env.local)
 pnpm db:migrate
 pnpm build:widget
 pnpm exec next build
@@ -43,7 +43,32 @@ COZE_PROJECT_ENV=PROD pnpm start
 
 Open `http://localhost:5000/studio`. To run the protocol test, use `pnpm test:mcp` with both processes running. For the isolated database test, create a disposable `vidio_test` database and run `TEST_DATABASE_URL=postgresql://vidio:vidio_local@127.0.0.1:54329/vidio_test pnpm test:integration`. Unit tests require no database: `pnpm test:unit`. Both databases live in the Docker volume; `docker compose down` stops the container but does not delete the volume. Never point the disposable integration test at user data.
 
-The preview uses signed, owner-bound browser sessions, a bounded image uploader, expiring media links, PostgreSQL projects/jobs and a separate queue worker. **The unauthenticated MCP demo is a shared synthetic sandbox: do not send personal, proprietary or sensitive product details to its tools.** Browser projects are scoped to an HTTP-only demo cookie, not an account. Media is stored on the local filesystem and is not production object storage. OAuth authorization-code/PKCE, tenant-bound live provider adapters, durable object storage, a public canonical HTTPS origin, privacy/deletion policy and an approved spending limit remain required before public production use or ChatGPT submission. No live provider execution or ChatGPT developer-mode submission is enabled by this preview.
+The preview uses signed, owner-bound browser sessions, a bounded image uploader, expiring media links, PostgreSQL projects/jobs and a separate queue worker. **MCP requires a bearer token; anonymous access and browser-cookie authentication are not supported on `/mcp`.** Browser projects are scoped to an HTTP-only demo cookie, not an account. Media is stored on the local filesystem and is not production object storage. OAuth authorization-code/PKCE, tenant-bound live provider adapters, durable object storage, a public canonical HTTPS origin, privacy/deletion policy and an approved spending limit remain required before public production use or ChatGPT submission. No live provider execution or ChatGPT developer-mode submission is enabled by this preview.
+
+### Authenticated local MCP client
+
+Endpoint: `http://localhost:5000/mcp`, stateless Streamable HTTP with JSON responses. GET and DELETE return 405; jobs are polled through tools rather than held in a long-running MCP request. `VIDIO_MCP_LOCAL_AUTH=true` is an explicit demo-only opt-in: signed tokens expire after 15 minutes, require `vidio:studio`, and are accepted only with a loopback Host. Add this flag to an existing private `.env.local` without replacing other values. With the flag absent, MCP instead requires configured OAuth JWT validation (`OAUTH_ISSUER`, `OAUTH_JWKS_URL`, `OAUTH_AUDIENCE`); missing configuration fails closed. Local bearer testing is not a ChatGPT-compatible OAuth authorization server.
+
+```bash
+pnpm mcp:token
+pnpm test:mcp:identification
+```
+
+Token creation writes `.vidio/mcp-token` with mode 0600 and refuses to overwrite an existing file. Remove an expired file yourself before issuing another token; never commit, print or share it. Connect from a local TypeScript client:
+
+```ts
+import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
+import { readFile } from 'node:fs/promises';
+const client = new Client({ name: 'vidio-local', version: '1.0.0' });
+await client.connect(new StreamableHTTPClientTransport(new URL('http://localhost:5000/mcp'), {
+  requestInit: { headers: { Authorization: `Bearer ${(await readFile('.vidio/mcp-token', 'utf8')).trim()}` } },
+}));
+const tools = await client.listTools();
+```
+
+The first verified canonical tools are `identify_product` and `generate_scripts`. Both accept `{ projectId: UUID, revision: nonnegative integer, idempotencyKey?: string (8–100 characters), confirmed?: boolean }` and enqueue fixture jobs on an existing owned project. Use `create_project` first, then `get_job` and `get_project` to read the completed fixture results. They mutate a project and are not annotated read-only. Provider credentials remain server-side and are never tool arguments or results. Existing widget tool names are retained.
+
+The installed stable TypeScript MCP SDK v2 packages are pinned to 2.3.1, MCP Apps to 2.0.3, and schemas use Zod 4. APIs are verified against the official [SDK v2 source](https://github.com/modelcontextprotocol/typescript-sdk), [MCP Apps](https://github.com/modelcontextprotocol/ext-apps), [OpenAI quickstart](https://developers.openai.com/apps-sdk/quickstart), [MCP Apps compatibility](https://developers.openai.com/apps-sdk/mcp-apps-in-chatgpt), and [authentication guidance](https://developers.openai.com/apps-sdk/build/auth). No plugin tutorial or new AI framework is used.
 
 ## 功能特性
 

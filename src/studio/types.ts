@@ -66,6 +66,7 @@ export const toolOutputSchema = z.object({
   job: jobSchema.optional(),
   projects: z.array(projectSchema).optional(),
   message: z.string(),
+  error: z.object({ code: z.string(), message: z.string() }).optional(),
 });
 export type ToolOutput = z.infer<typeof toolOutputSchema>;
 export type ToolResponse = {
