@@ -5,10 +5,13 @@ import {
 import assert from "node:assert/strict";
 import { setTimeout } from "node:timers/promises";
 import { readFile } from "node:fs/promises";
+import { config } from "dotenv";
 import { z } from "zod";
 import { toolOutputSchema } from "../src/studio/types";
 import { widgetUri } from "../src/studio/mcp";
+import { issueLocalMcpToken } from "../src/studio/mcp-auth";
 
+config({ path: ".env.local", quiet: true });
 const base = process.env.TEST_APP_ORIGIN ?? "http://localhost:5000";
 const client = new Client(
   { name: "vidio-offline-acceptance", version: "1.0.0" },
@@ -27,11 +30,28 @@ async function call(name: string, args: Record<string, unknown>) {
   };
 }
 async function main() {
+  const missingAuth = await fetch(`${base}/mcp`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: "{}",
+  });
+  assert.equal(missingAuth.status, 401);
+  assert.match(missingAuth.headers.get("www-authenticate") ?? "", /Bearer/);
+  checks++;
   await client.connect(
-    new StreamableHTTPClientTransport(new URL(`${base}/mcp`)),
+    new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
+      requestInit: { headers: { Authorization: `Bearer ${await issueLocalMcpToken()}` } },
+    }),
   );
   const tools = await client.listTools();
-  assert.equal(tools.tools.length, 14);
+  assert.equal(tools.tools.length, 19);
+  checks++;
+  for (const name of ["identify_product", "generate_scripts", "start_video_job", "get_video_job_status", "regenerate_segment", "compose_final_video", "get_final_video", "draft_scripts", "generate_segments", "compose_video"])
+    assert.ok(tools.tools.some((tool) => tool.name === name));
+  for (const name of ["start_video_job", "regenerate_segment", "compose_final_video"])
+    assert.equal(tools.tools.find((tool) => tool.name === name)?.annotations?.readOnlyHint, false);
+  for (const name of ["get_video_job_status", "get_final_video"])
+    assert.equal(tools.tools.find((tool) => tool.name === name)?.annotations?.readOnlyHint, true);
   checks++;
   assert.equal(
     tools.tools.find((tool) => tool.name === "render_project")?._meta?.[
@@ -54,8 +74,23 @@ async function main() {
       ratio: "16:9",
     })
   ).data.project!;
+  const otherClient = new Client({ name: "other-owner", version: "1.0.0" });
+  await otherClient.connect(new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
+    requestInit: { headers: { Authorization: `Bearer ${await issueLocalMcpToken()}` } },
+  }));
+  const otherRead = await otherClient.callTool({ name: "get_project", arguments: { projectId: project.id } });
+  assert.equal(otherRead.isError, true);
+  assert.equal(toolOutputSchema.parse(otherRead.structuredContent).error?.code, "NOT_FOUND");
+  await otherClient.close();
+  checks++;
+  const missingApproval = await client.callTool({
+    name: "compose_final_video",
+    arguments: { projectId: project.id, revision: project.revision, segmentIds: [1] },
+  });
+  assert.equal(missingApproval.isError, true);
+  checks++;
   const bad = await client.callTool({
-    name: "generate_segments",
+    name: "start_video_job",
     arguments: {
       projectId: project.id,
       revision: project.revision,
@@ -63,6 +98,11 @@ async function main() {
     },
   });
   assert.equal(bad.isError, true);
+  const validationError = await client.callTool({
+    name: "identify_product",
+    arguments: { projectId: project.id, revision: project.revision, imageUrl: "http://169.254.169.254" },
+  });
+  assert.equal(validationError.isError, true);
   checks++;
   async function run(operation: string, extra: Record<string, unknown> = {}) {
     const queued = await call(operation, {
@@ -74,7 +114,7 @@ async function main() {
     const job = queued.data.job!;
     const deadline = Date.now() + 60000;
     while (Date.now() < deadline) {
-      const status = (await call("get_job", { jobId: job.id })).data.job!;
+      const status = (await call("get_video_job_status", { jobId: job.id })).data.job!;
       if (status.status === "succeeded") {
         project = (await call("get_project", { projectId: project.id })).data
           .project!;
@@ -89,7 +129,7 @@ async function main() {
   await run("identify_product");
   assert.equal(project.stage, "identified");
   checks++;
-  await run("draft_scripts");
+  await run("generate_scripts");
   assert.equal(project.scripts.length, 4);
   checks++;
   project = (
@@ -106,7 +146,7 @@ async function main() {
   await run("preview_voice");
   assert.ok(project.voiceAssetId);
   checks++;
-  await run("generate_segments");
+  await run("start_video_job");
   assert.equal(project.segments.length, 4);
   checks++;
   const before = project.segments.map((segment) => segment.assetId);
@@ -114,10 +154,11 @@ async function main() {
   assert.equal(project.segments[0].assetId, before[0]);
   assert.notEqual(project.segments[1].assetId, before[1]);
   checks++;
-  await run("compose_video", { segmentIds: [1, 3] });
+  await run("compose_final_video", { segmentIds: [1, 3] });
   assert.equal(project.stage, "done");
   checks++;
-  const download = await call("get_download", { projectId: project.id });
+  const download = await call("get_final_video", { projectId: project.id });
+  assert.equal(download.data.finalVideo?.assetId, project.finalAssetId);
   assert.equal(JSON.stringify(download.data).includes("?token="), false);
   checks++;
   const mediaUrl = download.media![project.finalAssetId!];

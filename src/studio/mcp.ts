@@ -25,10 +25,14 @@ const titles: Record<McpToolName, string> = {
   identify_product: "Identify sample product",
   draft_scripts: "Draft fixture scripts",
   generate_scripts: "Generate product scripts",
+  start_video_job: "Start a sample video job after explicit approval",
+  get_video_job_status: "Read video job status",
   preview_voice: "Preview sample audio tone",
   generate_segments: "Generate local sample scenes",
   regenerate_segment: "Regenerate one sample scene",
   compose_video: "Compose selected sample scenes",
+  compose_final_video: "Compose a sample final video after explicit approval",
+  get_final_video: "Read the final video asset",
 };
 export function createMcpServer(owner: string) {
   const server = new McpServer({ name: "vidio", version: "0.1.0" });
@@ -45,7 +49,7 @@ export function createMcpServer(owner: string) {
       name,
       {
         title: titles[name],
-        description: `${titles[name]}. Authenticated DEMO ONLY: no AI/provider generation. Uses fixture recognition/scripts, sample tones and local two-second videos. Job tools require the current project revision; generation/composition require confirmed=true. Use synthetic test data.`,
+        description: `${titles[name]}. Authenticated DEMO ONLY: no AI/provider generation. Uses fixture recognition/scripts, sample tones and local two-second videos. Job tools require the current project revision; generation/composition require confirmed=true. This flag is not verified human consent; paid execution is disabled. Use synthetic test data.`,
         inputSchema: mcpSchemas[name],
         outputSchema: toolOutputSchema,
         annotations: {
@@ -53,7 +57,9 @@ export function createMcpServer(owner: string) {
             "list_projects",
             "get_project",
             "get_job",
+            "get_video_job_status",
             "get_download",
+            "get_final_video",
             "render_project",
           ].includes(name),
           destructiveHint: name === "cancel_job",

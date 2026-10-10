@@ -52,3 +52,17 @@ test("recognition and script MCP schemas reject unrelated fields and arbitrary s
     assert.throws(() => schema.parse({ ...input, revision: -1 }));
   }
 });
+test("paid-job contracts require explicit approval and well-formed segment selections", () => {
+  const common = { projectId: randomUUID(), revision: 2 };
+  for (const name of ["start_video_job", "regenerate_segment", "compose_final_video"] as const) {
+    const schema = mcpSchemas[name];
+    assert.throws(() => schema.parse(common));
+    assert.throws(() => schema.parse({ ...common, confirmed: false }));
+    assert.throws(() => schema.parse({ ...common, confirmed: true, unsafePath: "/tmp" }));
+  }
+  assert.throws(() => mcpSchemas.regenerate_segment.parse({ ...common, confirmed: true }));
+  assert.throws(() => mcpSchemas.regenerate_segment.parse({ ...common, confirmed: true, segmentId: 10 }));
+  assert.throws(() => mcpSchemas.compose_final_video.parse({ ...common, confirmed: true, segmentIds: [1, 1] }));
+  assert.throws(() => mcpSchemas.compose_final_video.parse({ ...common, confirmed: true, segmentIds: [] }));
+  assert.deepEqual(mcpSchemas.start_video_job.parse({ ...common, confirmed: true }), { ...common, confirmed: true });
+});

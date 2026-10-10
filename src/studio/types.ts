@@ -67,6 +67,7 @@ export const toolOutputSchema = z.object({
   projects: z.array(projectSchema).optional(),
   message: z.string(),
   error: z.object({ code: z.string(), message: z.string() }).optional(),
+  finalVideo: z.object({ assetId: z.uuid(), mimeType: z.literal("video/mp4") }).optional(),
 });
 export type ToolOutput = z.infer<typeof toolOutputSchema>;
 export type ToolResponse = {

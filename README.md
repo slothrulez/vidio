@@ -66,7 +66,19 @@ await client.connect(new StreamableHTTPClientTransport(new URL('http://localhost
 const tools = await client.listTools();
 ```
 
-The first verified canonical tools are `identify_product` and `generate_scripts`. Both accept `{ projectId: UUID, revision: nonnegative integer, idempotencyKey?: string (8–100 characters), confirmed?: boolean }` and enqueue fixture jobs on an existing owned project. Use `create_project` first, then `get_job` and `get_project` to read the completed fixture results. They mutate a project and are not annotated read-only. Provider credentials remain server-side and are never tool arguments or results. Existing widget tool names are retained.
+The canonical tools are:
+
+| Tool | Strict input schema | Behavior |
+|---|---|---|
+| `identify_product` | `{ projectId: UUID, revision: integer ≥ 0, idempotencyKey?: string (8–100 chars), confirmed?: boolean }` | Queues fixture recognition; mutates the project. |
+| `generate_scripts` | Same as `identify_product` | Queues four fixture scripts after identification. |
+| `start_video_job` | `{ projectId, revision, idempotencyKey?, confirmed: true }` | Explicit approval required; queues local sample scenes. |
+| `get_video_job_status` | `{ jobId: UUID }` | Read-only; returns the owned job ID, status, progress and bounded error. |
+| `regenerate_segment` | `{ projectId, revision, idempotencyKey?, confirmed: true, segmentId: integer 1–4 }` | Explicit approval required; queues one sample scene. |
+| `compose_final_video` | `{ projectId, revision, idempotencyKey?, confirmed: true, segmentIds: unique array of 1–4 integers 1–4 }` | Explicit approval required; queues local composition. |
+| `get_final_video` | `{ projectId: UUID }` | Read-only; returns the owned final asset ID, MIME type and a short-lived signed download URL in MCP result `_meta.media[assetId]`. |
+
+Job tools enqueue asynchronous work and return stable UUIDs; use `create_project` first, then `get_video_job_status` and `get_project`. No provider calls are made in demo mode. `confirmed: true` prevents accidental starts, but is client-declared and **not proof of human approval**; before adding paid provider execution, implement owner-bound, single-use server-side cost consent and a budget. Invalid fields, missing confirmation and cross-owner IDs are rejected. Browser/API contracts and older widget tools (`draft_scripts`, `generate_segments`, `compose_video`, etc.) remain available. Provider credentials stay server-side and are never tool arguments or results. Run `pnpm test:mcp` with the worker and server active for the full protocol/media workflow.
 
 The installed stable TypeScript MCP SDK v2 packages are pinned to 2.3.1, MCP Apps to 2.0.3, and schemas use Zod 4. APIs are verified against the official [SDK v2 source](https://github.com/modelcontextprotocol/typescript-sdk), [MCP Apps](https://github.com/modelcontextprotocol/ext-apps), [OpenAI quickstart](https://developers.openai.com/apps-sdk/quickstart), [MCP Apps compatibility](https://developers.openai.com/apps-sdk/mcp-apps-in-chatgpt), and [authentication guidance](https://developers.openai.com/apps-sdk/build/auth). No plugin tutorial or new AI framework is used.
 
