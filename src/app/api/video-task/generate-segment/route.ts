@@ -216,15 +216,14 @@ export async function POST(request: NextRequest) {
           watermark: false,
         }}, null, 2));
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const videoResponse = await videoClient.videoGeneration(content as any, {
+        const videoResponse = await videoClient.videoGeneration(content as Parameters<VideoGenerationClient['videoGeneration']>[0], {
           model: videoModelEP,
           duration: videoDuration,
           ratio: '16:9',
           resolution: '720p',
           generateAudio: false,
           watermark: false,
-        } as any);
+        });
 
         if (!videoResponse.videoUrl) {
           throw new Error('视频生成失败');

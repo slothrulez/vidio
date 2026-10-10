@@ -39,7 +39,7 @@ function generateSessionId(): string {
 }
 
 // 发送回调通知
-async function sendCallback(callbackUrl: string, data: any): Promise<void> {
+async function sendCallback(callbackUrl: string, data: unknown): Promise<void> {
   if (!callbackUrl) return;
   
   try {
@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
     
     // Step 1: 商品识别
     console.log('[API] Step 1: 商品识别...');
-    const identifyResult = await uploadAndIdentifyProduct(imageUrl, productName);
+    const identifyResult = await uploadAndIdentifyProduct(imageUrl, undefined, productName);
     
     if (!identifyResult.success) {
       return NextResponse.json(
@@ -236,12 +236,12 @@ export async function POST(request: NextRequest) {
       data: responseData,
     });
     
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[API] 处理请求失败:', error);
     
     const errorResponse = {
       success: false,
-      error: error.message || '未知错误',
+      error: error instanceof Error ? error.message : '未知错误',
       sessionId,
     };
     

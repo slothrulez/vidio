@@ -299,13 +299,12 @@ export async function* chatNodeStream(
   // 提取消息内容为字符串
   let lastUserMessageContent = '';
   if (lastUserMessage) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const content: any = lastUserMessage.content;
+    const content: unknown = lastUserMessage.content;
     if (typeof content === 'string') {
       lastUserMessageContent = content;
     } else if (Array.isArray(content)) {
       lastUserMessageContent = content
-        .map((c: any) => typeof c === 'string' ? c : c.text || '')
+        .map((c: unknown) => typeof c === 'string' ? c : c && typeof c === 'object' && 'text' in c && typeof c.text === 'string' ? c.text : '')
         .join('');
     }
   }

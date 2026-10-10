@@ -5,6 +5,7 @@
 
 import { AgentStateType, Step, VideoSegment } from "../state";
 import fs from "fs";
+import axios from "axios";
 import path from "path";
 import { exec } from "child_process";
 import { promisify } from "util";
@@ -184,21 +185,19 @@ async function generateSegment(
       });
       
       try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        return await videoClient.videoGeneration(content as any, {
+        return await videoClient.videoGeneration(content as Parameters<VideoGenerationClient['videoGeneration']>[0], {
           model: VIDEO_MODEL_EP,
           duration: videoDuration,
           ratio: '16:9',
           resolution: '720p',
           generateAudio: false,
           watermark: false,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        } as any);
-      } catch (err: any) {
+        });
+      } catch (err: unknown) {
         console.error(`[Agent] 片段 ${index + 1}: 视频生成错误详情`, {
-          message: err.message,
-          statusCode: err.statusCode,
-          response: err.response?.data || err.response?.body || 'no response data',
+          message: err instanceof Error ? err.message : String(err),
+          statusCode: err && typeof err === 'object' && 'statusCode' in err ? err.statusCode : undefined,
+          response: axios.isAxiosError(err) ? err.response?.data : 'no response data',
         });
         throw err;
       }

@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
   const { sessionId, message, imageUrl, auxiliaryImages, productName, voiceLanguage, scripts, segments, videoRatio } = body;
   
   // 获取或创建会话
-  let state: ChatAgentState = sessionId ? sessions.get(sessionId) || getDefaultState() : getDefaultState();
+  const state: ChatAgentState = sessionId ? sessions.get(sessionId) || getDefaultState() : getDefaultState();
   // 使用更唯一的ID生成方式（时间戳 + 随机数）
   const newSessionId = sessionId || `session_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
   

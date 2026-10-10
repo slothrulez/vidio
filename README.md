@@ -13,6 +13,39 @@ AI商家带货视频生成工具，面向电商商家、带货主播，提供一
 - 公共部署前，在构建环境中将已有的 `COZE_PROJECT_DOMAIN_DEFAULT` 设置为实际应用域名或完整 URL，供分享图片和现有 Agent HTTP 调度使用。未配置时，分享图片地址指向本地开发地址 `http://localhost:5000`；不要填入第三方品牌网站。
 - 运行 `pnpm test:branding` 执行不访问模型或生成视频的品牌回归检查；现有检查命令仍为 `pnpm lint`、`pnpm ts-check`、`pnpm validate` 和 `pnpm build`。
 
+## Safe MCP Apps preview (no paid provider calls)
+
+The `/studio` page and `/mcp` endpoint offer a **demo-only** product-video workflow. Recognition and scripts are fixtures; audio is a sample tone, and sample video scenes are locally rendered by FFmpeg. This is not live AI image recognition, narrated TTS, or AI video generation. In `VIDIO_MODE=demo`, the existing provider, file and proxy APIs return 503 to prevent bypassing this boundary. The original implementation is retained for later authenticated integration.
+
+Requires Node.js 22.12+ (24 recommended), pnpm, Docker, and FFmpeg with libx264. From the repository root:
+
+```bash
+pnpm install --frozen-lockfile
+docker compose up -d --wait
+```
+
+Create a **local, ignored** `.env.local` file. Generate the secret yourself; never commit or print its value:
+
+```bash
+printf 'DATABASE_URL=postgresql://vidio:vidio_local@127.0.0.1:54329/vidio\nVIDIO_MODE=demo\nVIDIO_PUBLIC_ORIGIN=http://localhost:5000\nVIDIO_PREVIEW_SECRET=%s\n' "$(openssl rand -hex 32)" > .env.local
+chmod 600 .env.local
+pnpm db:migrate
+pnpm build:widget
+pnpm exec next build
+pnpm exec tsup src/server.ts --format cjs --platform node --target node20 --outDir dist --no-splitting --no-minify
+```
+
+Start two processes in separate terminals (the worker must have access to the same `.vidio/` media directory as the web process):
+
+```bash
+pnpm worker
+COZE_PROJECT_ENV=PROD pnpm start
+```
+
+Open `http://localhost:5000/studio`. To run the protocol test, use `pnpm test:mcp` with both processes running. For the isolated database test, create a disposable `vidio_test` database and run `TEST_DATABASE_URL=postgresql://vidio:vidio_local@127.0.0.1:54329/vidio_test pnpm test:integration`. Unit tests require no database: `pnpm test:unit`. Both databases live in the Docker volume; `docker compose down` stops the container but does not delete the volume. Never point the disposable integration test at user data.
+
+The preview uses signed, owner-bound browser sessions, a bounded image uploader, expiring media links, PostgreSQL projects/jobs and a separate queue worker. **The unauthenticated MCP demo is a shared synthetic sandbox: do not send personal, proprietary or sensitive product details to its tools.** Browser projects are scoped to an HTTP-only demo cookie, not an account. Media is stored on the local filesystem and is not production object storage. OAuth authorization-code/PKCE, tenant-bound live provider adapters, durable object storage, a public canonical HTTPS origin, privacy/deletion policy and an approved spending limit remain required before public production use or ChatGPT submission. No live provider execution or ChatGPT developer-mode submission is enabled by this preview.
+
 ## 功能特性
 
 - **智能商品识别**：上传商品图片，自动识别商品名称和核心卖点

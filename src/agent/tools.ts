@@ -8,6 +8,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { execSync } from 'child_process';
 import { uploadFromRemoteUrl, uploadLocalFile } from '../lib/storage';
+import { parseRegenerationResult } from './transport';
 
 const getBaseUrl = () => {
   const domain = process.env.COZE_PROJECT_DOMAIN_DEFAULT;
@@ -171,8 +172,8 @@ export async function uploadAndIdentifyProduct(
           });
           imageBuffer = Buffer.from(imageResponse.data);
           break; // 成功则退出重试循环
-        } catch (retryError: any) {
-          if (retryError.code === 'ETIMEDOUT' || retryError.code === 'ECONNABORTED') {
+        } catch (retryError: unknown) {
+          if (axios.isAxiosError(retryError) && (retryError.code === 'ETIMEDOUT' || retryError.code === 'ECONNABORTED')) {
             console.warn(`[Tool] 图片下载超时，重试 ${retry + 1}/${maxRetries}`);
             if (retry < maxRetries - 1) {
               await new Promise(resolve => setTimeout(resolve, 2000)); // 等待2秒后重试
@@ -446,7 +447,7 @@ export async function* generateVideoSegmentsStream(
     
     const decoder = new TextDecoder();
     let buffer = '';
-    const segments: Array<{ 
+    const segments: Array<{
       id: number; 
       script: string; 
       videoPath?: string; 
@@ -646,7 +647,7 @@ export async function generateVideoSegments(
     
     const decoder = new TextDecoder();
     let buffer = '';
-    let segments: Array<{ 
+    const segments: Array<{
       id: number; 
       script: string; 
       videoPath?: string; 
@@ -1034,7 +1035,7 @@ export async function regenerateSegment(
         segmentId,
         script,
         prompt,
-        productImageUrl,
+        imageUrl: productImageUrl,
         productName,
         folderPath
       },
@@ -1043,22 +1044,17 @@ export async function regenerateSegment(
           ...customHeaders,
           'Content-Type': 'application/json'
         },
-        timeout: 300000 // 5 分钟超时
+        timeout: 300000, // 5 分钟超时
+        responseType: 'text'
       }
     );
     
-    const result = response.data;
+    const segment = parseRegenerationResult(response.data, segmentId, script);
     return {
       success: true,
       message: `片段 ${segmentId} 重新生成完成`,
       data: {
-        segment: {
-          id: segmentId,
-          script,
-          videoPath: result.videoPath,
-          audioPath: result.audioPath,
-          videoUrl: result.videoUrl
-        }
+        segment
       }
     };
   } catch (error) {

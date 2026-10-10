@@ -233,7 +233,7 @@ export default function ChatAgentPage() {
     formData.append("file", file);
     
     try {
-      const response = await fetch("/api/upload", {
+      const response = await fetch("/api/upload-image", {
         method: "POST",
         body: formData,
       });

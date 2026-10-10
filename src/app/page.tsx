@@ -2845,6 +2845,7 @@ export default function ChatAgentPage() {
     <>
       {/* 全屏背景 */}
       <div className="fixed inset-0 bg-[#F8F7F5]" />
+      <a href="/studio" className="fixed top-3 right-4 z-50 rounded-full bg-[#7543cf] px-4 py-2 text-xs font-medium text-white shadow-sm hover:bg-[#6332b8]">Open the safe studio demo →</a>
       
       {/* 左右分栏布局 */}
       <div 

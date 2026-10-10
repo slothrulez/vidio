@@ -20,12 +20,12 @@ export async function initNode(state: AgentStateType): Promise<Partial<AgentStat
   
   // 创建商品文件夹（处理重名）
   let folderName = productName;
-  let folderPath = path.join(baseDir, folderName);
+  let folderPath = path.join(/*turbopackIgnore: true*/ baseDir, folderName);
   let counter = 1;
   
-  while (fs.existsSync(folderPath)) {
+  while (fs.existsSync(/*turbopackIgnore: true*/ folderPath)) {
     folderName = `${productName}_${counter}`;
-    folderPath = path.join(baseDir, folderName);
+    folderPath = path.join(/*turbopackIgnore: true*/ baseDir, folderName);
     counter++;
   }
   

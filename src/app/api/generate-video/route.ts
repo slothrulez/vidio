@@ -287,14 +287,16 @@ async function generateVideoWithTaskCache(
   // Create new task promise
   const taskPromise = (async (): Promise<{ videoUrl: string; taskId: string }> => {
     const backoffDelays = [2000, 4000, 8000]; // 2s, 4s, 8s
-    let lastTaskId: string | null = null;
+    const lastTaskId: string | null = null;
     
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
         console.log(`第 ${segmentIndex + 1} 段视频生成开始（尝试 ${attempt + 1}/${maxRetries + 1}）...`);
         
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const videoResponse = await videoClient.videoGeneration(content as any, options as any);
+        const videoResponse = await videoClient.videoGeneration(
+          content as Parameters<VideoGenerationClient['videoGeneration']>[0],
+          options as Parameters<VideoGenerationClient['videoGeneration']>[1]
+        );
         
         if (!videoResponse.videoUrl) {
           throw new Error('未返回视频URL');
