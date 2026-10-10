@@ -52,6 +52,12 @@ test("recognition and script MCP schemas reject unrelated fields and arbitrary s
     assert.throws(() => schema.parse({ ...input, revision: -1 }));
   }
 });
+test("MCP project creation defaults to English and rejects other voiceover languages", () => {
+  assert.equal(mcpSchemas.create_project.parse({}).language, "english");
+  assert.equal(mcpSchemas.create_project.parse({ language: "english" }).language, "english");
+  for (const language of ["mandarin", "cantonese"])
+    assert.throws(() => mcpSchemas.create_project.parse({ language }));
+});
 test("paid-job contracts require explicit approval and well-formed segment selections", () => {
   const common = { projectId: randomUUID(), revision: 2 };
   for (const name of ["start_video_job", "regenerate_segment", "compose_final_video"] as const) {

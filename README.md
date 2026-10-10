@@ -496,10 +496,15 @@ Its app-only MCP tools `begin_image_upload`, `append_image_chunk`,
 through the authenticated bridge into private, owner-bound storage. Invalid
 bytes, unfinished uploads, foreign IDs, stale revisions and expired uploads
 fail; completed images return stable asset UUIDs. `save_scripts` atomically
-saves the editable scenes and invalidates stale renders. Public tool
-contracts remain unchanged; `retry_job` resumes an eligible failed job without
-submitting a second paid provider task. Mandarin/Cantonese and 16:9/9:16 are
-chosen on project creation. Script approval is separate from saving and from
+saves the editable scenes and invalidates stale renders. The seven workflow-tool
+input contracts remain unchanged; `retry_job` resumes an eligible failed job without
+submitting a second paid provider task. The MCP Apps studio creates **English-only**
+scripts, voiceover requests and captions; choose 16:9 or 9:16 on project creation.
+Demo audio remains an explicitly labelled sample tone, not English speech.
+Existing website/API language values and historical projects are preserved;
+non-English projects cannot be generated or retried through MCP and are not
+listed in the new studio. Create a new English project instead of silently
+translating or overwriting previous scripts. Script approval is separate from saving and from
 the final paid-action confirmation. Confirmations use accessible in-flow Radix
 panels beside their action, not full-iframe centered overlays that can appear
 offscreen in an auto-height host. Job and scene progress are recovered from
@@ -525,8 +530,8 @@ real OAuth 2.1 authorization server/JWKS audience/scope `vidio:studio`, as in
 the [Apps SDK authentication guide](https://developers.openai.com/apps-sdk/build/auth).
 Do not paste a local demo token into ChatGPT or expose the unauthenticated
 endpoint. Public OAuth provisioning, end-user data policy, server-verified
-single-use human cost consent, live recognition/scripts and a dedicated
-Cantonese TTS voice are **not implemented**. Production recognition/script
+single-use human cost consent, live recognition/scripts and verified live
+English speech are **not implemented**. Production recognition/script
 requests fail visibly until those adapters are implemented; video generation
 requires the existing operator opt-in, daily segment limit, storage and provider
 credentials.

@@ -25,11 +25,11 @@ function fixture(): StudioProject {
     id: randomUUID(),
     name: "Travel mug",
     revision: 3,
-    language: "mandarin",
+    language: "english",
     ratio: "16:9",
     stage: "scripted",
     features: ["Insulated"],
-    scripts: [{ id: 1, script: "認識旅行杯", prompt: "A close-up" }],
+    scripts: [{ id: 1, script: "Meet your new everyday travel mug.", prompt: "A close-up" }],
     segments: [],
     createdAt: new Date().toISOString(),
     mode: "demo",
@@ -55,17 +55,15 @@ function transport(project?: StudioProject) {
   };
   return { api, calls };
 }
-test("empty and loading states expose accessible Mandarin/Cantonese and 16:9/9:16 controls", async () => {
-  const { api } = transport();
+test("empty and loading states create English-only stories in 16:9 or 9:16", async () => {
+  const { api, calls } = transport();
   render(<EmbeddedStudio transport={api} />);
   assert.ok(screen.getByText("Loading owned projects…"));
   await screen.findByText("A product. A story. Your approval.");
-  assert.equal(
-    screen
-      .getByRole("combobox", { name: "Voiceover language" })
-      .querySelectorAll("option").length,
-    2,
-  );
+  const language = screen.getByRole("textbox", { name: "Voiceover language" }) as HTMLInputElement;
+  assert.equal(language.value, "English");
+  assert.equal(language.readOnly, true);
+  assert.equal(screen.queryByRole("combobox", { name: "Voiceover language" }), null);
   assert.equal(
     screen
       .getByRole("combobox", { name: "Video format" })
@@ -73,6 +71,22 @@ test("empty and loading states expose accessible Mandarin/Cantonese and 16:9/9:1
     2,
   );
   assert.equal(screen.queryByRole("button", { name: /Download/ }), null);
+  fireEvent.change(screen.getByRole("textbox", { name: "Product name" }), { target: { value: "Travel mug" } });
+  fireEvent.change(screen.getByRole("combobox", { name: "Video format" }), { target: { value: "9:16" } });
+  fireEvent.click(screen.getByRole("button", { name: "Create project" }));
+  await waitFor(() => assert.deepEqual(calls.find((call) => call.name === "create_project")?.args,
+    { name: "Travel mug", language: "english", ratio: "9:16" }));
+});
+test("historical non-English projects are not silently converted or rendered as English", async () => {
+  const project = fixture();
+  project.language = "mandarin";
+  project.scripts[0].script = "历史脚本";
+  const { api, calls } = transport(project);
+  render(<EmbeddedStudio transport={api} incoming={response(project)} />);
+  await screen.findByText(/Create a new English project; the original is unchanged/);
+  assert.equal(screen.queryByDisplayValue("历史脚本"), null);
+  assert.equal(screen.queryByRole("button", { name: "Generate labelled sample scenes" }), null);
+  assert.equal(calls.some((call) => call.name === "start_video_job"), false);
 });
 test("explicit review and a separate confirmation are required before generation", async () => {
   const project = fixture(),

@@ -48,11 +48,6 @@ type Action = {
   composition?: CompositionOptions;
 };
 type Draft = { script: string; prompt: string };
-const languages = {
-  mandarin: "Mandarin",
-  cantonese: "Cantonese",
-  english: "English",
-};
 
 function ActionConfirmation({
   action,
@@ -126,7 +121,6 @@ export function EmbeddedStudio({
     [working, setWorking] = useState(false),
     [error, setError] = useState("");
   const [name, setName] = useState(""),
-    [language, setLanguage] = useState<StudioProject["language"]>("mandarin"),
     [ratio, setRatio] = useState<StudioProject["ratio"]>("16:9");
   const [drafts, setDrafts] = useState<Record<number, Draft>>({}),
     [approval, setApproval] = useState<number>(),
@@ -157,6 +151,10 @@ export function EmbeddedStudio({
 
   const apply = useCallback((result: ToolResponse) => {
     const next = result.structuredContent.project;
+    if (next && next.language !== "english") {
+      setError("This saved project uses a different language. Create a new English project; the original is unchanged.");
+      return;
+    }
     if (next) {
       if (projectRef.current?.id !== next.id) {
         setDrafts({});
@@ -173,7 +171,7 @@ export function EmbeddedStudio({
       );
     }
     if (result.structuredContent.projects)
-      setProjects(result.structuredContent.projects);
+      setProjects(result.structuredContent.projects.filter((item) => item.language === "english"));
     const nextJob = result.structuredContent.job;
     if (
       nextJob &&
@@ -238,7 +236,7 @@ export function EmbeddedStudio({
       .callTool("list_projects", {})
       .then((result) => {
         if (alive) {
-          setProjects(result.structuredContent.projects ?? []);
+          setProjects((result.structuredContent.projects ?? []).filter((item) => item.language === "english"));
           setLoading(false);
         }
       })
@@ -508,8 +506,8 @@ export function EmbeddedStudio({
       </header>
       <div className="rounded-xl bg-purple-50 border border-purple-100 p-3 text-sm text-purple-900">
         {(project?.mode ?? incoming?.structuredContent.mode) === "production"
-          ? "Paid generation uses your configured provider and daily allowance. Recognition/script adapters may be unavailable. Voiceover language is requested from the native-audio model, not guaranteed by a dedicated TTS engine."
-          : "Demo only: product recognition and scripts are fixtures, not image analysis. Video samples are actually rendered locally; audio is a tone, not Mandarin/Cantonese speech. No paid provider calls."}
+          ? "Paid generation uses your configured provider and daily allowance. Recognition/script adapters may be unavailable. English voiceover is requested from the native-audio model, not guaranteed by a dedicated TTS engine."
+          : "Demo only: product recognition and English scripts are fixtures, not image analysis. Video samples are actually rendered locally; audio is a tone, not English speech. No paid provider calls."}
       </div>
       {error && (
         <div
@@ -578,20 +576,9 @@ export function EmbeddedStudio({
               onChange={(event) => setName(event.target.value)}
             />
             <div className="grid grid-cols-2 gap-3">
-              <label className="text-sm">
+              <label className="text-sm" htmlFor="embedded-language">
                 Voiceover language
-                <select
-                  aria-label="Voiceover language"
-                  value={language}
-                  disabled={busy}
-                  onChange={(event) =>
-                    setLanguage(event.target.value as StudioProject["language"])
-                  }
-                  className="block border rounded-lg p-2 w-full mt-1 bg-white"
-                >
-                  <option value="mandarin">Mandarin</option>
-                  <option value="cantonese">Cantonese</option>
-                </select>
+                <Input id="embedded-language" value="English" readOnly className="mt-1" />
               </label>
               <label className="text-sm">
                 Video format
@@ -615,7 +602,7 @@ export function EmbeddedStudio({
                 void run(() =>
                   transport.callTool("create_project", {
                     name: name.trim(),
-                    language,
+                    language: "english",
                     ratio,
                   }),
                 )
@@ -646,7 +633,7 @@ export function EmbeddedStudio({
             <div>
               <h1 className="text-xl font-semibold">{project.name}</h1>
               <p className="text-sm text-slate-500">
-                {languages[project.language]} · {project.ratio} · Revision{" "}
+                English · {project.ratio} · Revision{" "}
                 {project.revision}
               </p>
             </div>
@@ -1108,14 +1095,8 @@ export function EmbeddedStudio({
                     key={media[project.captionAssetId]}
                     kind="captions"
                     src={media[project.captionAssetId]}
-                    srcLang={
-                      project.language === "cantonese"
-                        ? "yue"
-                        : project.language === "mandarin"
-                          ? "zh"
-                          : "en"
-                    }
-                    label="Narration subtitles"
+                    srcLang="en"
+                    label="English captions"
                     default
                   />
                 )}

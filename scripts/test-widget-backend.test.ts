@@ -98,7 +98,7 @@ test("Streamable HTTP uploads are app-only, owner-scoped, chunk-idempotent and f
     );
   const created = await call("create_project", {
     name: "Private mug",
-    language: "cantonese",
+    language: "english",
     ratio: "9:16",
   });
   let project = toolOutputSchema.parse(created.structuredContent).project!;
@@ -136,7 +136,7 @@ test("Streamable HTTP uploads are app-only, owner-scoped, chunk-idempotent and f
     );
   }
   assert.equal(project.imageAssetIds?.length, 2);
-  assert.equal(project.language, "cantonese");
+  assert.equal(project.language, "english");
   assert.equal(project.imageAssetId, project.imageAssetIds?.[0]);
   assert.equal(
     (
@@ -154,10 +154,25 @@ test("Streamable HTTP uploads are app-only, owner-scoped, chunk-idempotent and f
     "image/png",
   );
 });
+test("MCP generation is English-only while historical website projects remain unchanged", async () => {
+  for (const language of ["mandarin", "cantonese"])
+    assert.equal((await call("create_project", { language })).isError, true);
+  const created = await call("create_project", { name: "English by default" });
+  assert.equal(toolOutputSchema.parse(created.structuredContent).project!.language, "english");
+  const legacy = await createProject(owner, { name: "Historical story", language: "mandarin", ratio: "16:9" });
+  const input = { projectId: legacy.id, revision: legacy.revision, confirmed: true };
+  for (const name of ["identify_product", "generate_scripts", "start_video_job"])
+    assert.equal(toolOutputSchema.parse((await call(name, input)).structuredContent).error?.code, "LANGUAGE");
+  assert.equal(toolOutputSchema.parse((await call("compose_final_video", { ...input, segmentIds: [1] })).structuredContent).error?.code, "LANGUAGE");
+  const unchanged = await getProject(owner, legacy.id);
+  assert.equal(unchanged.language, "mandarin");
+  assert.equal(unchanged.revision, legacy.revision);
+  assert.equal(unchanged.activeJobId, undefined);
+});
 test("malformed, oversized, partial, expired and spoofed uploads fail without attaching an asset", async () => {
   const project = await createProject(owner, {
     name: "Invalid upload",
-    language: "mandarin",
+    language: "english",
     ratio: "16:9",
   });
   assert.equal(
@@ -217,15 +232,15 @@ test("malformed, oversized, partial, expired and spoofed uploads fail without at
   assert.equal((await call("abort_image_upload",{uploadId})).isError,undefined);
   assert.equal((await call("finish_image_upload",{uploadId})).isError,true);
 });
-test("composition produces a real MP4 with timed Chinese captions and original instrumental audio", async () => {
+test("composition produces a real MP4 with timed English captions and original instrumental audio", async () => {
   const project = await createProject(owner, {
     name: "Subtitle test",
-    language: "cantonese",
+    language: "english",
     ratio: "16:9",
   });
   project.scripts = [
-    { id: 1, script: "你好，日常好物。", prompt: "Sample only" },
-    { id: 2, script: "一齊睇真啲。", prompt: "Sample only" },
+    { id: 1, script: "Meet your next everyday essential.", prompt: "Sample only" },
+    { id: 2, script: "Take a closer look.", prompt: "Sample only" },
   ];
   await saveProject(owner, project);
   const updated = await executeDemo(
@@ -253,17 +268,18 @@ test("composition produces a real MP4 with timed Chinese captions and original i
   const caption = await readAsset(owner, updated.captionAssetId!);
   assert.equal(caption.mime, "text/vtt");
   assert.match(caption.buffer.toString(), /00:00:02.000 --> 00:00:04.000/);
-  assert.match(caption.buffer.toString(), /一齊睇真啲/);
+  assert.match(caption.buffer.toString(), /Take a closer look/);
   const probe = await promisify(execFile)("ffprobe", [
     "-v",
     "error",
     "-show_entries",
-    "stream=codec_name,codec_type,duration:format=duration",
+    "stream=codec_name,codec_type,duration:stream_tags=language:format=duration",
     "-of",
     "json",
     assetPath(updated.finalAssetId!),
   ]);
   const info = JSON.parse(probe.stdout);
+  assert.equal(info.streams.find((stream: { codec_name: string }) => stream.codec_name === "mov_text").tags.language, "eng");
   assert.ok(
     info.streams.some(
       (stream: { codec_name: string }) => stream.codec_name === "mov_text",

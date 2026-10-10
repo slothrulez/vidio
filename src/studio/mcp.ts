@@ -20,7 +20,7 @@ const titles: Record<McpToolName, string> = {
   begin_image_upload: "Begin a private product image upload",
   append_image_chunk: "Upload a private product image chunk",
   finish_image_upload: "Validate and save a private product image",
-  create_project: "Create a demo project",
+  create_project: "Create an English project",
   list_projects: "List demo projects",
   get_project: "Read a demo project",
   render_project: "Open the vidio studio",

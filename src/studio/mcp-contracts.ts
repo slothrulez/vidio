@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { schemas, executeTool, type ToolName } from "./service";
-import { compositionOptionsSchema } from "./types";
+import { compositionOptionsSchema, operations, StudioError } from "./types";
+import { getProject, getJob } from "./store";
 
 const modelJob = z.object({
   projectId: z.uuid(),
@@ -15,6 +16,7 @@ const segment = z.number().int().min(1).max(4);
 
 export const mcpSchemas = {
   ...schemas,
+  create_project: schemas.create_project.extend({ language: z.literal("english").default("english") }),
   identify_product: modelJob,
   generate_scripts: modelJob,
   start_video_job: confirmedJob,
@@ -28,6 +30,12 @@ export const mcpSchemas = {
 };
 export type McpToolName = keyof typeof mcpSchemas;
 
+async function requireEnglishProject(owner: string, projectId: string) {
+  const project = await getProject(owner, projectId);
+  if (project.language !== "english")
+    throw new StudioError("LANGUAGE", "Create a new English project to use the MCP studio. Your existing project is unchanged.");
+}
+
 export async function executeMcpTool(owner: string, name: McpToolName, args: unknown) {
   const input = mcpSchemas[name].parse(args);
   const aliases = {
@@ -40,6 +48,10 @@ export async function executeMcpTool(owner: string, name: McpToolName, args: unk
   const target: ToolName = name in aliases
     ? aliases[name as keyof typeof aliases]
     : name as ToolName;
+  if (operations.some((operation) => operation === target) && "projectId" in input && typeof input.projectId === "string")
+    await requireEnglishProject(owner, input.projectId);
+  if (target === "retry_job" && "jobId" in input)
+    await requireEnglishProject(owner, (await getJob(owner, input.jobId)).projectId);
   const result = await executeTool(owner, target, input);
   const job = result.structuredContent.job;
   if (job && name in aliases && name !== "get_final_video") {
