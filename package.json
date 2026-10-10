@@ -1,5 +1,6 @@
 {
-  "name": "projects",
+  "name": "vidio",
+  "description": "AI product-video creation with conversational agents.",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -10,7 +11,8 @@
     "lint:build": "eslint . --quiet",
     "start": "bash ./scripts/start.sh",
     "ts-check": "tsc -p tsconfig.json",
-    "validate": "pnpm run --parallel '/^(ts-check|lint:build)$/'"
+    "validate": "pnpm run --parallel '/^(ts-check|lint:build)$/'",
+    "test:branding": "node --test scripts/test-branding.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.958.0",

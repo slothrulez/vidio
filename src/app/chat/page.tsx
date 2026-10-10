@@ -54,7 +54,7 @@ export default function ChatAgentPage() {
     {
       id: "welcome",
       role: "assistant",
-      content: "您好！我是带货视频小助手，专精于带货短视频生成。\n\n我可以帮您：\n1. 上传商品图片，自动识别商品和卖点\n2. 生成带货文案\n3. 生成带货视频片段\n4. 合成最终视频\n\n请上传您的商品图片，开始创作吧！",
+      content: "您好！我是 vidio，专精于带货短视频生成。\n\n我可以帮您：\n1. 上传商品图片，自动识别商品和卖点\n2. 生成带货文案\n3. 生成带货视频片段\n4. 合成最终视频\n\n请上传您的商品图片，开始创作吧！",
       timestamp: new Date(),
     },
   ]);
@@ -353,7 +353,7 @@ export default function ChatAgentPage() {
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-gray-800 flex items-center justify-center gap-2">
             <Sparkles className="w-8 h-8 text-purple-600" />
-            带货视频小助手
+            vidio
           </h1>
           <p className="text-gray-500 mt-2">AI Agent 驱动的带货短视频生成工具</p>
         </div>

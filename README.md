@@ -1,6 +1,17 @@
-# 货小影 (HuoXiaoYing)
+<img src="public/assets/vidio-logo.svg" alt="vidio" width="240" />
+
+# vidio
+
+AI product-video creation — from product image to finished video.
 
 AI商家带货视频生成工具，面向电商商家、带货主播，提供一键生成带货短视频的能力。
+
+## 品牌与页面元数据
+
+- 品牌名称统一为小写 **vidio**；保留现有中文界面和视频创作流程。
+- 原创标志位于 `public/assets/vidio-logo.svg` 和 `public/assets/vidio-icon.svg`；浏览器图标、应用图标及分享图片通过 Next.js 元数据文件自动提供。
+- 公共部署前，在构建环境中将已有的 `COZE_PROJECT_DOMAIN_DEFAULT` 设置为实际应用域名或完整 URL，供分享图片和现有 Agent HTTP 调度使用。未配置时，分享图片地址指向本地开发地址 `http://localhost:5000`；不要填入第三方品牌网站。
+- 运行 `pnpm test:branding` 执行不访问模型或生成视频的品牌回归检查；现有检查命令仍为 `pnpm lint`、`pnpm ts-check`、`pnpm validate` 和 `pnpm build`。
 
 ## 功能特性
 

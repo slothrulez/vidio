@@ -258,7 +258,7 @@ export async function POST(request: NextRequest) {
 // GET: 获取API使用说明
 export async function GET() {
   return NextResponse.json({
-    name: '货小影 - 商品带货视频生成API',
+    name: 'vidio - 商品带货视频生成API',
     version: '1.0.0',
     description: '一键生成商品带货视频的自动化API',
     endpoint: '/api/generate-product-video',
