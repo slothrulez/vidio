@@ -457,6 +457,75 @@ Run mocked failure/recovery/ownership checks with a disposable database:
 `TEST_DATABASE_URL=postgresql://.../vidio_test pnpm test:integration`.
 Live providers remain disabled in demo mode.
 
+### Separate vidio MCP Apps studio (v2)
+
+The original website and `/studio` remain unchanged. The **separate** bundled
+React 19 studio is served through the authenticated Streamable HTTP endpoint
+`http://localhost:5000/mcp` in demo mode and `https://<your-host>/mcp` after
+production deployment. `pnpm build:widget` writes its self-contained HTML to
+`.vidio/widget.html` (also run by `pnpm build`). The server registers
+`ui://vidio/studio-v2.html` as `text/html;profile=mcp-app`, associates it with
+the normal project/video tools using `_meta.ui.resourceUri`, and advertises the
+resource CSP for private media on `VIDIO_PUBLIC_ORIGIN`. The UI initializes
+through `@modelcontextprotocol/ext-apps/react`, consumes host tool input and
+results, calls tools through the bridge, and opens final downloads through the
+standard `ui/open-link` capability if the host supports it. No ChatGPT-specific
+browser globals or cross-origin upload `fetch` calls are needed.
+
+Use the **Safe MCP Apps preview** setup above to configure `.env.local` and
+PostgreSQL; run `pnpm db:migrate` before starting the server. In separate
+terminals, run `pnpm dev` and `pnpm worker`. In demo mode, issue a new private
+token with `pnpm mcp:token` (expires in 15 minutes). Configure a supported MCP
+Apps host, such as the [official basic-host example](https://github.com/modelcontextprotocol/ext-apps/tree/main/examples/basic-host),
+to connect to `http://localhost:5000/mcp` via Streamable HTTP with the
+`Authorization: Bearer <token>` header. The local token only works on loopback
+and cannot be used from a hosted ChatGPT connector. If the host cannot forward
+this header, it cannot use local demo mode; do **not** disable authentication.
+Open `render_project` or a project/video tool in the host to load the widget;
+then select a saved project or create a new one. Use fresh synthetic images in
+demo mode and avoid live provider testing.
+
+The widget accepts up to six images per new project, PNG/JPEG only, 5 MB each.
+Its app-only MCP tools `begin_image_upload`, `append_image_chunk`,
+`finish_image_upload`, and `abort_image_upload` transfer bounded base64 chunks
+through the authenticated bridge into private, owner-bound storage. Invalid
+bytes, unfinished uploads, foreign IDs, stale revisions and expired uploads
+fail; completed images return stable asset UUIDs. `save_scripts` atomically
+saves the editable scenes and invalidates stale renders. Public tool
+contracts remain unchanged; `retry_job` resumes an eligible failed job without
+submitting a second paid provider task. Mandarin/Cantonese and 16:9/9:16 are
+chosen on project creation. Script approval is separate from saving and from
+the final paid-action confirmation. Job and scene progress are recovered from
+PostgreSQL on widget reopen, with an explicit media-link refresh on expiry.
+
+`compose_final_video` additionally accepts optional
+`composition: { subtitles: boolean, backgroundMusic: "none" | "soft" }`.
+When requested, the worker creates timed UTF-8 captions (MP4 mov_text track
+and a private expiring WebVTT preview track) and mixes a locally synthesized
+soft instrumental under the existing audio. Captions and final media have
+owner-bound UUIDs; no downloaded MP4 control appears before the preview loads
+and validates a final asset. No external BGM/voice provider is contacted by
+these composition options. Tests: `pnpm test:ui`,
+`TEST_DATABASE_URL=postgresql://.../vidio_test pnpm test:integration`,
+`pnpm test:unit`, `pnpm test:mcp`, `pnpm build:widget`, `pnpm build`.
+
+**Manual ChatGPT configuration / release gates:** deploy the Next.js service
+and separate long-running pg-boss/FFmpeg worker with the documented production
+environment, run migrations, set a canonical HTTPS `VIDIO_PUBLIC_ORIGIN`, and
+optionally set a separate HTTPS `VIDIO_WIDGET_ORIGIN` for the host's app domain.
+Configure ChatGPT's developer connector with the HTTPS `/mcp` endpoint and a
+real OAuth 2.1 authorization server/JWKS audience/scope `vidio:studio`, as in
+the [Apps SDK authentication guide](https://developers.openai.com/apps-sdk/build/auth).
+Do not paste a local demo token into ChatGPT or expose the unauthenticated
+endpoint. Public OAuth provisioning, end-user data policy, server-verified
+single-use human cost consent, live recognition/scripts and a dedicated
+Cantonese TTS voice are **not implemented**. Production recognition/script
+requests fail visibly until those adapters are implemented; video generation
+requires the existing operator opt-in, daily segment limit, storage and provider
+credentials.
+`confirmed: true` remains client-declared outside the widget and must not be
+described as proof of consent. No live paid test was run here.
+
 - [Next.js 官方文档](https://nextjs.org/docs)
 - [shadcn/ui 组件文档](https://ui.shadcn.com)
 - [Tailwind CSS 文档](https://tailwindcss.com/docs)

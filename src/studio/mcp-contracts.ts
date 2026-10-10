@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { schemas, executeTool, type ToolName } from "./service";
+import { compositionOptionsSchema } from "./types";
 
 const modelJob = z.object({
   projectId: z.uuid(),
@@ -20,6 +21,7 @@ export const mcpSchemas = {
   get_video_job_status: statusSchema,
   regenerate_segment: confirmedJob.extend({ segmentId: segment }),
   compose_final_video: confirmedJob.extend({
+    composition: compositionOptionsSchema.optional(),
     segmentIds: z.array(segment).min(1).max(4).refine((ids) => new Set(ids).size === ids.length),
   }),
   get_final_video: finalSchema,

@@ -7,6 +7,7 @@ import {
   startJob,
   updateScript,
   cancelJob,
+  replaceScripts,
 } from "./store";
 import { projectMedia } from "./assets";
 import {
@@ -14,10 +15,14 @@ import {
   operations,
   type ToolResponse,
   StudioError,
+  scriptsSchema,
 } from "./types";
 import { studioMode } from "./config";
+import { uploadSchemas, executeUpload, type UploadTool } from "./uploads";
+import { retryJob } from "./lifecycle";
 
 export const schemas = {
+  ...uploadSchemas,
   create_project: z
     .object({
       name: z
@@ -26,7 +31,7 @@ export const schemas = {
         .min(1)
         .max(100)
         .default("Your everyday essential"),
-      language: z.enum(["english", "mandarin"]).default("english"),
+      language: z.enum(["english", "mandarin", "cantonese"]).default("english"),
       ratio: z.enum(["16:9", "9:16", "1:1"]).default("16:9"),
     })
     .strict(),
@@ -35,6 +40,7 @@ export const schemas = {
   render_project: z.object({ projectId: z.uuid().optional() }).strict(),
   get_job: z.object({ jobId: z.uuid() }).strict(),
   cancel_job: z.object({ jobId: z.uuid() }).strict(),
+  retry_job: z.object({ jobId: z.uuid() }).strict(),
   get_download: z.object({ projectId: z.uuid() }).strict(),
   update_script: z
     .object({
@@ -45,6 +51,7 @@ export const schemas = {
       prompt: z.string().trim().min(1).max(1500),
     })
     .strict(),
+  save_scripts: z.object({projectId:z.uuid(),revision:z.number().int().nonnegative(),scripts:scriptsSchema.min(1).refine(scripts=>scripts.every(script=>script.prompt.trim().length>0),"Visual directions are required")}).strict(),
   identify_product: jobInputSchema,
   draft_scripts: jobInputSchema,
   preview_voice: jobInputSchema,
@@ -63,10 +70,15 @@ export async function executeTool(
   args: unknown,
 ): Promise<ToolResponse> {
   const mode=studioMode();
-  let project, job, projects;
+  let project, job, projects, upload;
   let message = mode === "demo" ?
     "Demo only: recognition and scripts are fixtures; voice is a sample tone and videos are local sample media. No AI provider was called." : "Production studio: owned projects, durable jobs and private media.";
-  if (operations.some((operation) => operation === name)) {
+  if (Object.hasOwn(uploadSchemas,name)) {
+    const result=await executeUpload(owner,name as UploadTool,args);
+    project=result.project;
+    upload=result.upload;
+    message=project ? "Product image saved privately." : name==="abort_image_upload" ? "Unfinished upload cancelled." : "Private image upload in progress.";
+  } else if (operations.some((operation) => operation === name)) {
     const input = jobInputSchema.parse(args);
     job = await startJob(owner, name as (typeof operations)[number], input);
     project = await getProject(owner, input.projectId);
@@ -92,11 +104,19 @@ export async function executeTool(
     job = await getJob(owner, schemas.get_job.parse(args).jobId);
   else if (name === "cancel_job")
     job = await cancelJob(owner, schemas.cancel_job.parse(args).jobId);
-  else if (name === "update_script")
+  else if (name === "retry_job") {
+    const input=schemas.retry_job.parse(args);
+    await retryJob(owner,input.jobId);
+    job=await getJob(owner,input.jobId);
+  }
+  else if (name === "save_scripts") {
+    const input=schemas.save_scripts.parse(args);
+    project=await replaceScripts(owner,input.projectId,input.revision,input.scripts);
+  } else if (name === "update_script")
     project = await updateScript(owner, schemas.update_script.parse(args));
   return {
     structuredContent: { mode, project, job, projects, message },
-    _meta: project ? { media: await projectMedia(owner, project) } : undefined,
+    _meta: { ...(project ? { media: await projectMedia(owner, project),mediaExpiresAt:new Date(Date.now()+600_000).toISOString() } : {}), ...(upload ? {upload} : {}) },
   };
 }
 

@@ -30,7 +30,7 @@ let otherToken="";
 const objects=new Map<string,{buffer:Buffer;mime:string}>();
 let privateBucket=true;
 before(async()=>{
-  for (const name of ["0001_studio.sql","0002_job_lifecycle.sql","0003_result_ownership.sql"]) await database().query(await readFile(`migrations/${name}`,"utf8"));
+  for (const name of ["0001_studio.sql","0002_job_lifecycle.sql","0003_result_ownership.sql","0004_widget_uploads.sql"]) await database().query(await readFile(`migrations/${name}`,"utf8"));
   const {publicKey,privateKey}=await generateKeyPair("RS256");
   const jwk={...await exportJWK(publicKey),kid:"test-key",alg:"RS256",use:"sig"};
   mock.method(globalThis,"fetch",async()=>Response.json({keys:[jwk]}));

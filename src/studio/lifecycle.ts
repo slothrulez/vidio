@@ -70,6 +70,7 @@ export async function persistSegment(job: ClaimedJob, segment: StudioProject["se
     const project = await getProject(job.owner, job.projectId, client);
     project.segments = [...project.segments.filter((item) => item.id !== segment.id), segment].sort((a,b) => a.id-b.id);
     delete project.finalAssetId;
+    delete project.captionAssetId;
     await saveProject(job.owner, project, client);
     const counts = await client.query("SELECT count(*)::int AS total,count(*) FILTER(WHERE status='completed')::int AS done FROM vidio_job_segments WHERE job_id=$1", [job.id]);
     const { total, done } = counts.rows[0];
@@ -92,9 +93,15 @@ export async function composedAsset(job:ClaimedJob) {
     return result.rows[0].result_asset_id as string|null;
   });
 }
-export async function persistComposition(job:ClaimedJob,assetId:string) {
+export async function composedCaption(job:ClaimedJob) {
+  return locked(job,async client=>{
+    const result=await client.query("SELECT result_caption_asset_id FROM vidio_jobs WHERE id=$1",[job.id]);
+    return result.rows[0].result_caption_asset_id as string|null;
+  });
+}
+export async function persistComposition(job:ClaimedJob,assetId:string,captionAssetId?:string) {
   await locked(job,async(client)=>{
-    await client.query("UPDATE vidio_jobs SET result_asset_id=$2,progress=95,updated_at=now() WHERE id=$1",[job.id,assetId]);
+    await client.query("UPDATE vidio_jobs SET result_asset_id=$2,result_caption_asset_id=$3,progress=95,updated_at=now() WHERE id=$1",[job.id,assetId,captionAssetId ?? null]);
   });
 }
 export async function completeJob(job: ClaimedJob, updated: StudioProject) {

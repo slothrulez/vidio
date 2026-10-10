@@ -60,7 +60,7 @@ export async function registerAsset(
 ) {
   const production=process.env.VIDIO_MODE === "production";
   const limit=mime.startsWith("image/") ? 5_000_000 : production ? MAX_ASSET_BYTES : 6_000_000;
-  if (!["image/png","image/jpeg","video/mp4","audio/mpeg"].includes(mime) || !buffer.length || buffer.length>limit)
+  if (!["image/png","image/jpeg","video/mp4","audio/mpeg","text/vtt"].includes(mime) || !buffer.length || buffer.length>limit || (mime==="text/vtt" && buffer.length>100_000))
     throw new StudioError("ASSET_LIMIT", "Unsupported asset type or size",413);
   const id = randomUUID();
   async function insert(connection: PoolClient) {
@@ -143,6 +143,8 @@ export async function verifyMediaToken(token: string, id: string) {
 export async function projectMedia(owner: string, project: StudioProject) {
   const ids = [
     project.imageAssetId,
+    ...(project.imageAssetIds ?? []),
+    project.captionAssetId,
     project.voiceAssetId,
     project.finalAssetId,
     ...project.segments.map((segment) => segment.assetId),

@@ -6,7 +6,7 @@ import { executeDemo, type ExecutionContext } from "./studio/demo";
 import { studioMode, workerLimits } from "./studio/config";
 import { composeOwnedSegments } from "./studio/composition";
 import { ArkVideoProvider,executeVideoJob } from "./studio/video-provider";
-import { composedAsset,persistComposition } from "./studio/lifecycle";
+import { composedAsset,composedCaption,persistComposition } from "./studio/lifecycle";
 import { claimJob, heartbeat, completeJob, failJob, recoverJobs, completedSegment, persistSegment, type ClaimedJob } from "./studio/lifecycle";
 import { StudioError, type StudioProject } from "./studio/types";
 
@@ -17,7 +17,7 @@ const demoExecutor: JobExecutor = (job, project, context) => executeDemo(job.own
 const managedExecutor: JobExecutor = async (job,project,context) => {
   if (project.mode!==studioMode()) throw new StudioError("MODE","Project mode does not match the worker");
   if (project.mode==="demo") return demoExecutor(job,project,context);
-  if (job.operation==="compose_video") return composeOwnedSegments(job.owner,project,job.input.segmentIds!,context.signal,context.checkpoint);
+  if (job.operation==="compose_video") return composeOwnedSegments(job.owner,project,job.input.segmentIds!,context.signal,context.checkpoint,job.input.composition);
   if (process.env.VIDIO_PAID_GENERATION_ENABLED!=="true") throw new StudioError("BUDGET","Paid generation is disabled");
   return executeVideoJob(job,project,context,new ArkVideoProvider());
 };
@@ -53,10 +53,10 @@ export async function runJob(id: string, execute: JobExecutor = managedExecutor)
     };
     const previous=job.operation==="compose_video" ? await composedAsset(job) : null;
     let updated:StudioProject;
-    if (previous) { project.finalAssetId=previous; project.stage="done"; updated=project; }
+    if (previous) { project.finalAssetId=previous; project.captionAssetId=await composedCaption(job) ?? undefined; project.stage="done"; updated=project; }
     else {
       updated=await execute(job,project,context);
-      if (job.operation==="compose_video" && updated.finalAssetId) await persistComposition(job,updated.finalAssetId);
+      if (job.operation==="compose_video" && updated.finalAssetId) await persistComposition(job,updated.finalAssetId,updated.captionAssetId);
     }
     await completeJob(job,updated);
   } catch (error) {

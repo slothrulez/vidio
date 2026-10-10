@@ -58,7 +58,7 @@ export async function createProject(
   owner: string,
   input: {
     name: string;
-    language: "english" | "mandarin";
+    language: "english" | "mandarin" | "cantonese";
     ratio: "16:9" | "9:16" | "1:1";
   },
 ) {
@@ -107,6 +107,7 @@ export async function replaceScripts(owner:string,id:string,revision:number,scri
     project.stage="scripted";
     project.revision++;
     delete project.finalAssetId;
+    delete project.captionAssetId;
     delete project.voiceAssetId;
     await saveProject(owner,project,client);
     return project;
@@ -149,6 +150,7 @@ export async function updateScript(
     project.stage = "scripted";
     project.segments = [];
     delete project.finalAssetId;
+    delete project.captionAssetId;
     delete project.voiceAssetId;
     await saveProject(owner, project, client);
     return project;

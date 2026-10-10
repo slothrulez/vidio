@@ -31,7 +31,8 @@ export class ArkVideoProvider implements VideoProvider {
       throw new StudioError("PROVIDER_CONFIGURATION","Configure the provider CDN hostname allowlist",503);
   }
   async submit(project:StudioProject,script:Script,imageUrl:string|undefined,signal:AbortSignal) {
-    const content: Array<{type:"text";text:string}|{type:"image_url";image_url:{url:string};role:"first_frame"}>=[{type:"text",text:`${script.prompt}\nNarration: ${script.script}`}];
+    const voice=project.language==="cantonese" ? "Cantonese (粤语), not Mandarin" : project.language==="mandarin" ? "Mandarin Chinese (普通话)" : "English";
+    const content: Array<{type:"text";text:string}|{type:"image_url";image_url:{url:string};role:"first_frame"}>=[{type:"text",text:`${script.prompt}\nSpoken voiceover language: ${voice}. Read this approved narration: ${script.script}`}];
     if (imageUrl) content.push({type:"image_url",image_url:{url:imageUrl},role:"first_frame"});
     try {
       const response=await fetch(`${this.base}/api/v3/contents/generations/tasks`,{method:"POST",redirect:"error",signal:AbortSignal.any([signal,AbortSignal.timeout(15_000)]),headers:{Authorization:`Bearer ${this.key}`,"Content-Type":"application/json"},body:JSON.stringify({model:this.model,content,ratio:project.ratio,resolution:"720p",duration:5,generate_audio:true,watermark:true})});

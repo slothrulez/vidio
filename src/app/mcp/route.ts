@@ -24,7 +24,7 @@ export async function POST(request: Request) {
       throw new StudioError("HOST", "Host is not permitted", 403);
     const owner = await mcpActor(request);
     const body = JSON.parse(
-      new TextDecoder().decode(await boundedBody(request, 20_000)),
+      new TextDecoder().decode(await boundedBody(request, 350_000)),
     );
     const server = createMcpServer(owner);
     const transport = new WebStandardStreamableHTTPServerTransport({

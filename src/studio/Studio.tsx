@@ -33,6 +33,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   toolOutputSchema,
+  toolMetaSchema,
   type StudioProject,
   type StudioJob,
   type ToolResponse,
@@ -53,10 +54,7 @@ export function parseToolResponse(value: unknown): ToolResponse {
       isError: z.boolean().optional(),
       content: z.array(z.object({ text: z.string().optional() })).optional(),
       structuredContent: z.unknown().optional(),
-      _meta: z
-        .object({ media: z.record(z.string(), z.string().url()).optional() })
-        .passthrough()
-        .optional(),
+      _meta: toolMetaSchema.optional(),
     })
     .passthrough()
     .parse(value);

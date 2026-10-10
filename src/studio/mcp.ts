@@ -9,11 +9,17 @@ import path from "node:path";
 import { safeError } from "./service";
 import { mcpSchemas, executeMcpTool, type McpToolName } from "./mcp-contracts";
 import { mcpScope } from "./mcp-auth";
-import { toolOutputSchema } from "./types";
+import { toolOutputSchema,StudioError } from "./types";
 import { publicOrigin,studioMode } from "./config";
 
-export const widgetUri = "ui://vidio/studio-v1.html";
+export const widgetUri = "ui://vidio/studio-v2.html";
 const titles: Record<McpToolName, string> = {
+  abort_image_upload: "Cancel an unfinished private image upload",
+  retry_job: "Retry an existing video job safely",
+  save_scripts: "Save reviewed scene scripts",
+  begin_image_upload: "Begin a private product image upload",
+  append_image_chunk: "Upload a private product image chunk",
+  finish_image_upload: "Validate and save a private product image",
   create_project: "Create a demo project",
   list_projects: "List demo projects",
   get_project: "Read a demo project",
@@ -36,12 +42,15 @@ const titles: Record<McpToolName, string> = {
 };
 export function createMcpServer(owner: string) {
   const mode=studioMode();
+  const domain=process.env.VIDIO_WIDGET_ORIGIN ? publicOrigin(process.env.VIDIO_WIDGET_ORIGIN) : undefined;
+  if(domain && !domain.startsWith("https://"))throw new StudioError("CONFIGURATION","The widget origin must use HTTPS",503);
   const server = new McpServer({ name: "vidio", version: "0.1.0" });
   for (const name of Object.keys(mcpSchemas) as McpToolName[]) {
+    const appOnly=["begin_image_upload","append_image_chunk","finish_image_upload","abort_image_upload","save_scripts"].includes(name);
     const metadata: Record<string, unknown> = {
       securitySchemes: [{ type: "oauth2", scopes: [mcpScope] }],
     };
-    if (name === "render_project") {
+    if (!appOnly) {
       metadata.ui = { resourceUri: widgetUri };
       metadata["openai/outputTemplate"] = widgetUri;
     }
@@ -65,9 +74,9 @@ export function createMcpServer(owner: string) {
           ].includes(name),
           destructiveHint: name === "cancel_job",
             openWorldHint: mode==="production",
-          idempotentHint: name !== "create_project" && name !== "update_script",
+          idempotentHint: !["create_project","update_script","save_scripts","begin_image_upload"].includes(name),
         },
-        _meta: metadata,
+        _meta: appOnly ? { ...metadata,ui:{visibility:["app"]} } : metadata,
       },
       async (args: unknown) => {
         try {
@@ -91,7 +100,7 @@ export function createMcpServer(owner: string) {
       },
     );
   }
-  registerAppResource(server, "vidio studio", widgetUri, {}, async () => ({
+  registerAppResource(server, "vidio studio", widgetUri, {mimeType:RESOURCE_MIME_TYPE}, async () => ({
     contents: [
       {
         uri: widgetUri,
@@ -102,6 +111,7 @@ export function createMcpServer(owner: string) {
         ),
         _meta: {
           ui: {
+            ...(domain ? {domain} : {}),
             csp: { resourceDomains: [publicOrigin()], connectDomains: [] },
             prefersBorder: true,
           },

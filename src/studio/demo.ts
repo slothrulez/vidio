@@ -127,6 +127,7 @@ export async function executeDemo(
       project.scripts = [];
       project.segments = [];
       delete project.finalAssetId;
+      delete project.captionAssetId;
       delete project.voiceAssetId;
     } else if (operation === "draft_scripts") {
       const english = [
@@ -141,8 +142,14 @@ export async function executeDemo(
         `让${project.name}融入你的日常。`,
         `发现你的下一件日常好物：${project.name}。`,
       ];
+      const cantonese = [
+        `認識${project.name}，發現日常生活嘅新靈感。`,
+        `睇真啲細節，近距離了解${project.name}。`,
+        `等${project.name}融入你嘅日常生活。`,
+        `發現你下一件日常好物：${project.name}。`,
+      ];
       project.scripts = (
-        project.language === "english" ? english : mandarin
+        project.language === "english" ? english : project.language === "cantonese" ? cantonese : mandarin
       ).map((script, id) => ({
         id: id + 1,
         script,
@@ -151,6 +158,7 @@ export async function executeDemo(
       project.segments = [];
       project.stage = "scripted";
       delete project.finalAssetId;
+      delete project.captionAssetId;
       delete project.voiceAssetId;
     } else if (operation === "preview_voice") {
       const output = path.join(workspace, "sample.mp3");
@@ -179,13 +187,15 @@ export async function executeDemo(
       }
       project.stage = "generated";
       delete project.finalAssetId;
+      delete project.captionAssetId;
     } else if (operation === "regenerate_segment") {
       const segment = context ? await context.segment(input.segmentId!, () => clip(input.segmentId!)) : await clip(input.segmentId!);
       project.segments = [...project.segments.filter(item=>item.id!==segment.id),segment].sort((a,b)=>a.id-b.id);
       project.stage = "generated";
       delete project.finalAssetId;
+      delete project.captionAssetId;
     } else if (operation === "compose_video") {
-      await composeOwnedSegments(owner,project,input.segmentIds!,context?.signal,checkpoint);
+      await composeOwnedSegments(owner,project,input.segmentIds!,context?.signal,checkpoint,input.composition);
     }
     await checkpoint(95);
     return project;

@@ -10,7 +10,7 @@ export const projectSchema = z.object({
   id: z.uuid(),
   name: z.string().min(1).max(100),
   revision: z.number().int(),
-  language: z.enum(["english", "mandarin"]),
+  language: z.enum(["english", "mandarin", "cantonese"]),
   ratio: z.enum(["16:9", "9:16", "1:1"]),
   stage: z.enum(["new", "identified", "scripted", "generated", "done"]),
   features: z.array(z.string()),
@@ -24,6 +24,8 @@ export const projectSchema = z.object({
     }),
   ),
   imageAssetId: z.uuid().optional(),
+  imageAssetIds: z.array(z.uuid()).max(6).optional(),
+  captionAssetId: z.uuid().optional(),
   voiceAssetId: z.uuid().optional(),
   finalAssetId: z.uuid().optional(),
   activeJobId: z.uuid().optional(),
@@ -62,6 +64,11 @@ export const jobSchema = z.object({
   segments: z.array(segmentRecordSchema).optional(),
 });
 export type StudioJob = z.infer<typeof jobSchema>;
+export const compositionOptionsSchema = z.object({
+  subtitles: z.boolean().default(false),
+  backgroundMusic: z.enum(["none", "soft"]).default("none"),
+}).strict();
+export type CompositionOptions = z.infer<typeof compositionOptionsSchema>;
 export const jobInputSchema = z
   .object({
     projectId: z.uuid(),
@@ -70,6 +77,7 @@ export const jobInputSchema = z
     confirmed: z.boolean().default(false),
     segmentId: z.number().int().min(1).max(4).optional(),
     segmentIds: z.array(z.number().int().min(1).max(4)).max(4).optional(),
+    composition: compositionOptionsSchema.optional(),
   })
   .strict();
 export type JobInput = z.infer<typeof jobInputSchema>;
@@ -92,9 +100,14 @@ export const toolOutputSchema = z.object({
   finalVideo: z.object({ assetId: z.uuid(), mimeType: z.literal("video/mp4") }).optional(),
 });
 export type ToolOutput = z.infer<typeof toolOutputSchema>;
+export const toolMetaSchema = z.object({
+  media: z.record(z.string(), z.string().url()).optional(),
+  mediaExpiresAt: z.string().optional(),
+  upload: z.object({ id: z.uuid(), offset: z.number().int().nonnegative(), expiresAt: z.string() }).optional(),
+}).passthrough();
 export type ToolResponse = {
   structuredContent: ToolOutput;
-  _meta?: { media?: Record<string, string> };
+  _meta?: z.infer<typeof toolMetaSchema>;
 };
 
 export class StudioError extends Error {

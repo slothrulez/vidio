@@ -43,8 +43,7 @@ export function studioMode(): "demo" | "production" {
   return "production";
 }
 
-export function publicOrigin() {
-  const configured = process.env.VIDIO_PUBLIC_ORIGIN;
+export function publicOrigin(configured = process.env.VIDIO_PUBLIC_ORIGIN) {
   if (!configured) return "http://localhost:5000";
   const url = new URL(configured);
   if (url.username || url.password || url.pathname!=="/" || url.search || url.hash) throw new StudioError("CONFIGURATION","Configure a canonical public origin without a path or credentials",503);

@@ -20,6 +20,7 @@ export async function GET(
     const { buffer, mime, size } = await readAsset(owner, id);
     const headers: Record<string, string> = {
       "Content-Type": mime,
+      "Access-Control-Allow-Origin": "*",
       "Cache-Control": "private, no-store",
       "X-Content-Type-Options": "nosniff",
       "Accept-Ranges": "bytes",

@@ -53,11 +53,13 @@ export async function POST(request: Request) {
         buffer,
         client,
       );
+      project.imageAssetIds = [project.imageAssetId];
       project.stage = "new";
       project.features = [];
       project.scripts = [];
       project.segments = [];
       delete project.finalAssetId;
+      delete project.captionAssetId;
       delete project.voiceAssetId;
       project.revision++;
       await saveProject(owner, project, client);

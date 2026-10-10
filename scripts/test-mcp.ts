@@ -9,6 +9,7 @@ import { config } from "dotenv";
 import { z } from "zod";
 import { toolOutputSchema } from "../src/studio/types";
 import { widgetUri } from "../src/studio/mcp";
+import { mcpSchemas } from "../src/studio/mcp-contracts";
 import { issueLocalMcpToken } from "../src/studio/mcp-auth";
 
 config({ path: ".env.local", quiet: true });
@@ -44,7 +45,7 @@ async function main() {
     }),
   );
   const tools = await client.listTools();
-  assert.equal(tools.tools.length, 19);
+  assert.equal(tools.tools.length, Object.keys(mcpSchemas).length);
   checks++;
   for (const name of ["identify_product", "generate_scripts", "start_video_job", "get_video_job_status", "regenerate_segment", "compose_final_video", "get_final_video", "draft_scripts", "generate_segments", "compose_video"])
     assert.ok(tools.tools.some((tool) => tool.name === name));
