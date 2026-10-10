@@ -258,7 +258,7 @@ test("composition produces a real MP4 with timed Chinese captions and original i
     "-v",
     "error",
     "-show_entries",
-    "stream=codec_name,codec_type:format=duration",
+    "stream=codec_name,codec_type,duration:format=duration",
     "-of",
     "json",
     assetPath(updated.finalAssetId!),
@@ -274,7 +274,22 @@ test("composition produces a real MP4 with timed Chinese captions and original i
       (stream: { codec_type: string }) => stream.codec_type === "audio",
     ),
   );
+  for (const type of ["video", "audio"]) {
+    const stream = info.streams.find((stream: { codec_type: string }) => stream.codec_type === type);
+    assert.ok(Number(stream.duration) >= 3.8, `${type} must cover both complete scenes, not just the first subtitle packet`);
+    assert.ok(Number(stream.duration) <= 4.2);
+  }
   assert.ok(Number(info.format.duration) >= 3.8);
+  await composeOwnedSegments(owner, updated, [1, 2], undefined, async () => {}, {
+    subtitles: true,
+    backgroundMusic: "none",
+  });
+  const captionOnlyProbe = await promisify(execFile)("ffprobe", [
+    "-v", "error", "-show_entries", "stream=codec_type,duration", "-of", "json", assetPath(updated.finalAssetId!),
+  ]);
+  const streams: Array<{ codec_type: string; duration: string }> = JSON.parse(captionOnlyProbe.stdout).streams;
+  for (const stream of streams)
+    assert.ok(Number(stream.duration) >= 3.8, "Subtitles must not truncate video/audio even without background music");
   assert.equal(
     subtitleFiles([
       {

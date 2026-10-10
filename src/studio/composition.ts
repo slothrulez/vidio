@@ -123,19 +123,12 @@ export async function composeOwnedSegments(
           "-map",
           "[a]",
         );
-      else
-        outputArgs.push(
-          "-map",
-          `${inputIndex}:a:0`,
-          "-t",
-          String(
-            selected.reduce(
-              (duration, segment) => duration + segment.duration,
-              0,
-            ),
-          ),
-        );
-      outputArgs.push("-c:a", "aac");
+      else outputArgs.push("-map", `${inputIndex}:a:0`);
+      // Bound synthetic audio by the full timeline, not sparse subtitle packets.
+      outputArgs.push(
+        "-c:a", "aac", "-t",
+        String(selected.reduce((duration, segment) => duration + segment.duration, 0)),
+      );
     } else outputArgs.push("-map", "0:a:0?", "-c:a", "copy");
     args.push(...outputArgs);
     if (captions)
@@ -150,7 +143,6 @@ export async function composeOwnedSegments(
     args.push(
       "-c:v",
       "copy",
-      "-shortest",
       "-movflags",
       "+faststart",
       "final.mp4",
