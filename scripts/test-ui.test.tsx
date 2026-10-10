@@ -130,6 +130,29 @@ test("editing a reviewed script revokes approval and blocks unsaved generation",
   );
   assert.ok(screen.getByText(/Unsaved edits/));
 });
+test("composition confirmation stays next to its action and cancellation restores focus without starting a job", async () => {
+  const project = fixture();
+  project.stage = "generated";
+  project.segments = [{ id: 1, assetId: randomUUID(), duration: 2, script: project.scripts[0].script }];
+  const { api, calls } = transport(project);
+  render(<EmbeddedStudio transport={api} incoming={response(project)} />);
+  const compose = await screen.findByRole("button", { name: "Compose final MP4" });
+  fireEvent.click(compose);
+  const dialog = screen.getByRole("alertdialog", { name: "Approve final composition?" });
+  assert.equal(dialog.closest("section"), compose.closest("section"));
+  assert.equal(dialog.getAttribute("aria-modal"), null);
+  assert.equal(dialog.classList.contains("fixed"), false);
+  assert.equal(document.body.style.pointerEvents, "");
+  assert.ok(screen.getByText(/1 completed scenes; subtitles on; music soft/));
+  assert.equal(calls.some((call) => call.name === "compose_final_video"), false);
+  fireEvent.click(screen.getByRole("button", { name: "Not yet" }));
+  await waitFor(() => assert.equal(screen.queryByRole("alertdialog"), null));
+  await waitFor(() => assert.equal(document.activeElement, compose));
+  assert.equal(calls.some((call) => call.name === "compose_final_video"), false);
+  fireEvent.click(compose);
+  fireEvent.keyDown(screen.getByRole("alertdialog"), { key: "Escape" });
+  await waitFor(() => assert.equal(screen.queryByRole("alertdialog"), null));
+});
 test("partial failure retains completed previews and allows safe retry", async () => {
   const project = fixture();
   project.scripts.push({ id: 2, script: "Second scene", prompt: "Mock" });

@@ -15,16 +15,15 @@ import { Textarea } from "../components/ui/textarea";
 import { Badge } from "../components/ui/badge";
 import { Progress } from "../components/ui/progress";
 import { Checkbox } from "../components/ui/checkbox";
+import * as DialogPrimitive from "@radix-ui/react-dialog";
 import {
-  AlertDialog,
-  AlertDialogContent,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogCancel,
-  AlertDialogAction,
-} from "../components/ui/alert-dialog";
+  Dialog,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  DialogClose,
+} from "../components/ui/dialog";
 import type { McpToolName } from "../studio/mcp-contracts";
 import type {
   CompositionOptions,
@@ -54,6 +53,60 @@ const languages = {
   cantonese: "Cantonese",
   english: "English",
 };
+
+function ActionConfirmation({
+  action,
+  mode,
+  disabled,
+  onCancel,
+  onConfirm,
+  returnFocus,
+}: {
+  action: Action;
+  mode: StudioProject["mode"];
+  disabled: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+  returnFocus: () => void;
+}) {
+  return (
+    <Dialog open modal={false} onOpenChange={(open) => { if (!open) onCancel(); }}>
+      {/* In-flow content stays beside its action in auto-height host iframes. */}
+      <DialogPrimitive.Content
+        role="alertdialog"
+        className="relative mt-3 grid gap-4 rounded-xl border border-purple-200 bg-white p-4 shadow-sm outline-none"
+        onInteractOutside={(event) => event.preventDefault()}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          returnFocus();
+        }}
+      >
+        <DialogHeader>
+          <DialogTitle>
+            {action.name === "compose_final_video"
+              ? "Approve final composition?"
+              : action.name === "regenerate_segment"
+                ? `Approve scene ${action.segmentId} regeneration?`
+                : "Approve video generation?"}
+          </DialogTitle>
+          <DialogDescription>
+            {mode === "demo"
+              ? "This renders explicitly labelled local samples. No paid AI generation or real speech occurs."
+              : "This starts work using your configured provider/worker and may consume your approved allowance. The current saved script and selected settings will be used."}{" "}
+            {action.name === "compose_final_video" &&
+              `${action.segmentIds?.length} completed scenes; subtitles ${action.composition?.subtitles ? "on" : "off"}; music ${action.composition?.backgroundMusic}.`}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button variant="outline">Not yet</Button>
+          </DialogClose>
+          <Button disabled={disabled} onClick={onConfirm}>Approve &amp; start</Button>
+        </DialogFooter>
+      </DialogPrimitive.Content>
+    </Dialog>
+  );
+}
 
 export function EmbeddedStudio({
   transport,
@@ -88,6 +141,7 @@ export function EmbeddedStudio({
     [mediaVersion, setMediaVersion] = useState(0),
     [mediaErrors, setMediaErrors] = useState<Record<string, boolean>>({});
   const projectRef = useRef(project),
+    actionTrigger = useRef<HTMLButtonElement | null>(null),
     actionKeys = useRef(new Map<string, string>()),
     refreshing = useRef(false);
   const busy = working || jobIsActive(job) || !!project?.activeJobId;
@@ -422,6 +476,20 @@ export function EmbeddedStudio({
     outputIsReady(project, readyAsset, finalUrl) &&
     !mediaErrors[project.finalAssetId!];
   const sceneList = project ? sceneStates(project, job) : [];
+  const requestAction = (request: Action, trigger: HTMLButtonElement) => {
+    actionTrigger.current = trigger;
+    setAction(request);
+  };
+  const confirmation = action && project ? (
+    <ActionConfirmation
+      action={action}
+      mode={project.mode}
+      disabled={busy || hasEdits || (action.name !== "compose_final_video" && approval !== project.revision)}
+      onCancel={() => setAction(undefined)}
+      onConfirm={() => { setAction(undefined); void start(action); }}
+      returnFocus={() => actionTrigger.current?.focus({preventScroll:true})}
+    />
+  ) : null;
 
   return (
     <div className="bg-[#f8f7fc] text-slate-900 min-h-screen p-4 sm:p-6 space-y-5 font-sans">
@@ -800,13 +868,14 @@ export function EmbeddedStudio({
               </label>
               <Button
                 disabled={busy || hasEdits || approval !== project.revision}
-                onClick={() => setAction({ name: "start_video_job" })}
+                onClick={(event) => requestAction({ name: "start_video_job" }, event.currentTarget)}
               >
                 <Film size={16} />
                 {project.mode === "demo"
                   ? "Generate labelled sample scenes"
                   : "Generate paid video scenes"}
               </Button>
+              {action?.name === "start_video_job" && confirmation}
             </section>
           )}
           {job && (
@@ -918,16 +987,17 @@ export function EmbeddedStudio({
                           disabled={
                             busy || hasEdits || approval !== project.revision
                           }
-                          onClick={() =>
-                            setAction({
+                          onClick={(event) =>
+                            requestAction({
                               name: "regenerate_segment",
                               segmentId: script.id,
-                            })
+                            }, event.currentTarget)
                           }
                         >
                           Regenerate scene {script.id}
                         </Button>
                       </div>
+                      {action?.name === "regenerate_segment" && action.segmentId === script.id && confirmation}
                     </CardContent>
                   </Card>
                 ))}
@@ -982,16 +1052,17 @@ export function EmbeddedStudio({
               </p>
               <Button
                 disabled={busy || hasEdits || !selected.length}
-                onClick={() =>
-                  setAction({
+                onClick={(event) =>
+                  requestAction({
                     name: "compose_final_video",
                     segmentIds: [...selected].sort((a, b) => a - b),
                     composition,
-                  })
+                  }, event.currentTarget)
                 }
               >
                 Compose final MP4
               </Button>
+              {action?.name === "compose_final_video" && confirmation}
             </section>
           )}
           {project.stage === "done" && project.finalAssetId && finalUrl && (
@@ -1098,47 +1169,6 @@ export function EmbeddedStudio({
           )}
         </>
       )}
-      <AlertDialog
-        open={!!action}
-        onOpenChange={(open) => {
-          if (!open) setAction(undefined);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {action?.name === "compose_final_video"
-                ? "Approve final composition?"
-                : action?.name === "regenerate_segment"
-                  ? `Approve scene ${action.segmentId} regeneration?`
-                  : "Approve video generation?"}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {project?.mode === "demo"
-                ? "This renders explicitly labelled local samples. No paid AI generation or real speech occurs."
-                : "This starts work using your configured provider/worker and may consume your approved allowance. The current saved script and selected settings will be used."}{" "}
-              {action?.name === "compose_final_video" &&
-                `${action.segmentIds?.length} completed scenes; subtitles ${action.composition?.subtitles ? "on" : "off"}; music ${action.composition?.backgroundMusic}.`}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Not yet</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={
-                busy ||
-                hasEdits ||
-                (action?.name !== "compose_final_video" &&
-                  approval !== project?.revision)
-              }
-              onClick={() => {
-                if (action) void start(action);
-              }}
-            >
-              Approve & start
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

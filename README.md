@@ -479,8 +479,13 @@ token with `pnpm mcp:token` (expires in 15 minutes). Configure a supported MCP
 Apps host, such as the [official basic-host example](https://github.com/modelcontextprotocol/ext-apps/tree/main/examples/basic-host),
 to connect to `http://localhost:5000/mcp` via Streamable HTTP with the
 `Authorization: Bearer <token>` header. The local token only works on loopback
-and cannot be used from a hosted ChatGPT connector. If the host cannot forward
-this header, it cannot use local demo mode; do **not** disable authentication.
+and cannot be used from a hosted ChatGPT connector. The current basic-host has
+no bearer-header setting. Local testing therefore requires an external
+**loopback-only**, same-origin `/mcp` proxy that injects a fresh scoped token
+server-side, forwards only the exact MCP endpoint and sets upstream `Host` to
+`localhost:5000`. Keep official AppBridge/sandbox code unchanged and keep tokens
+out of frontend code and logs. If the host cannot forward this header, it
+cannot use local demo mode; do **not** disable authentication.
 Open `render_project` or a project/video tool in the host to load the widget;
 then select a saved project or create a new one. Use fresh synthetic images in
 demo mode and avoid live provider testing.
@@ -495,7 +500,9 @@ saves the editable scenes and invalidates stale renders. Public tool
 contracts remain unchanged; `retry_job` resumes an eligible failed job without
 submitting a second paid provider task. Mandarin/Cantonese and 16:9/9:16 are
 chosen on project creation. Script approval is separate from saving and from
-the final paid-action confirmation. Job and scene progress are recovered from
+the final paid-action confirmation. Confirmations use accessible in-flow Radix
+panels beside their action, not full-iframe centered overlays that can appear
+offscreen in an auto-height host. Job and scene progress are recovered from
 PostgreSQL on widget reopen, with an explicit media-link refresh on expiry.
 
 `compose_final_video` additionally accepts optional
