@@ -3,12 +3,14 @@ import { actor } from "@/studio/auth";
 import { studioMode } from "@/studio/config";
 import { getJob } from "@/studio/store";
 import { safeError } from "@/studio/service";
+import { rateLimit } from "@/studio/rate-limit";
 
 export const runtime="nodejs";
 export async function GET(request:Request,{params}:{params:Promise<{jobId:string}>}) {
   try {
     studioMode();
     const owner=await actor(request);
+    await rateLimit(owner);
     const job=await getJob(owner,z.uuid().parse((await params).jobId));
     return Response.json({...job,status:job.lifecycleStatus},{headers:{"Cache-Control":"private, no-store"}});
   } catch(error) {

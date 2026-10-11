@@ -5,6 +5,7 @@ import { checkOrigin, publicOrigin, studioMode } from "@/studio/config";
 import { StudioError } from "@/studio/types";
 import { safeError } from "@/studio/service";
 import { boundedBody } from "@/studio/request";
+import { rateLimit } from "@/studio/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,6 +24,7 @@ export async function POST(request: Request) {
     )
       throw new StudioError("HOST", "Host is not permitted", 403);
     const owner = await mcpActor(request);
+    await rateLimit(owner);
     const body = JSON.parse(
       new TextDecoder().decode(await boundedBody(request, 350_000)),
     );

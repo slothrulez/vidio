@@ -263,3 +263,47 @@ test("invalid uploads reject visibly without server calls or fake saved assets",
     false,
   );
 });
+test("newer project revisions conflict with local drafts; older snapshots cannot overwrite state",async()=>{
+  const project=fixture(),{api,calls}=transport(project);
+  const view=render(<EmbeddedStudio transport={api} incoming={response(project)} />);
+  const narration=await screen.findByLabelText("Narration · scene 1");
+  fireEvent.change(narration,{target:{value:"My unsaved draft"}});
+  const newer={...project,revision:4,scripts:[{...project.scripts[0],script:"New server narration"}]};
+  view.rerender(<EmbeddedStudio transport={api} incoming={response(newer)} />);
+  await screen.findByText(/changed while you were editing/);
+  assert.equal((screen.getByRole("button",{name:"Save all script edits"}) as HTMLButtonElement).disabled,true);
+  assert.equal(calls.some(call=>call.name==="save_scripts"),false);
+  view.rerender(<EmbeddedStudio transport={api} incoming={response(project)} />);
+  fireEvent.click(screen.getByRole("button",{name:"Discard conflicted edits"}));
+  assert.equal((screen.getByLabelText("Narration · scene 1") as HTMLTextAreaElement).value,"New server narration");
+});
+test("composition confirmation is cancelled when its project or revision changes",async()=>{
+  const project=fixture();project.stage="generated";project.segments=[{id:1,assetId:randomUUID(),duration:2,script:"Approved"}];
+  const {api,calls}=transport(project),view=render(<EmbeddedStudio transport={api} incoming={response(project)} />);
+  const compose=await screen.findByRole("button",{name:"Compose final MP4"});
+  await waitFor(()=>assert.equal((compose as HTMLButtonElement).disabled,false));
+  fireEvent.click(compose);assert.ok(screen.getByRole("alertdialog"));
+  view.rerender(<EmbeddedStudio transport={api} incoming={response({...project,revision:4})} />);
+  await waitFor(()=>assert.equal(screen.queryByRole("alertdialog"),null));
+  fireEvent.click(screen.getByRole("button",{name:"Compose final MP4"}));
+  assert.ok(screen.getByRole("alertdialog"));
+  const other={...project,id:randomUUID(),name:"Other owned project"};
+  view.rerender(<EmbeddedStudio transport={api} incoming={response(other)} />);
+  await waitFor(()=>assert.equal(screen.queryByRole("alertdialog"),null));
+  assert.equal(calls.some(call=>call.name==="compose_final_video"),false);
+});
+test("terminal polling fetches a fresh project rather than leaving an obsolete active marker",async()=>{
+  const project=fixture(),jobId=randomUUID();project.activeJobId=jobId;
+  let reads=0;
+  const api:EmbeddedTransport={callTool:async(name)=>{
+    if (name==="list_projects") return response();
+    if (name==="get_video_job_status") return {structuredContent:{mode:"demo",message:"Complete",job:{id:jobId,projectId:project.id,operation:"start_video_job",status:"succeeded",progress:100,error:null,createdAt:project.createdAt}}};
+    reads++;
+    if (reads===1) return response(project);
+    const done={...project,revision:4};delete done.activeJobId;return response(done);
+  }};
+  render(<EmbeddedStudio transport={api} incoming={response(project)} />);
+  await waitFor(()=>assert.ok(reads>=2));
+  await waitFor(()=>assert.equal((screen.getByRole("button",{name:"Save all script edits"}) as HTMLButtonElement).disabled,true));
+  assert.equal((screen.getByLabelText("Narration · scene 1") as HTMLTextAreaElement).disabled,false);
+});

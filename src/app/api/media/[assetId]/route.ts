@@ -1,5 +1,7 @@
 import { z } from "zod";
-import { verifyMediaToken, readAsset } from "@/studio/assets";
+import { verifyMediaToken } from "@/studio/assets";
+import { byteRange, mediaMetadata, mediaStream } from "@/studio/media";
+import { rateLimit } from "@/studio/rate-limit";
 import { StudioError } from "@/studio/types";
 import { safeError } from "@/studio/service";
 import { studioMode } from "@/studio/config";
@@ -17,7 +19,9 @@ export async function GET(
       url.searchParams.get("token") ?? "",
       id,
     );
-    const { buffer, mime, size } = await readAsset(owner, id);
+    await rateLimit(owner);
+    const metadata = await mediaMetadata(owner, id);
+    const { mime, size } = metadata;
     const headers: Record<string, string> = {
       "Content-Type": mime,
       "Access-Control-Allow-Origin": "*",
@@ -29,23 +33,15 @@ export async function GET(
     if (url.searchParams.get("download") === "1")
       headers["Content-Disposition"] = `attachment; filename="vidio${mode === "demo" ? "-demo" : ""}.mp4"`;
     const range = request.headers.get("range");
+    const selected = byteRange(range,size);
+    if (!selected) return new Response(null,{status:416,headers:{"Content-Range":`bytes */${size}`,"Cache-Control":"private, no-store"}});
+    const {start,end}=selected;
     if (range) {
-      const match = /^bytes=(\d+)-(\d*)$/.exec(range);
-      const start = match ? Number(match[1]) : size,
-        end = match?.[2] ? Number(match[2]) : size - 1;
-      if (start > end || start >= size || end >= size)
-        return new Response(null, {
-          status: 416,
-          headers: { "Content-Range": `bytes */${size}` },
-        });
       headers["Content-Range"] = `bytes ${start}-${end}/${size}`;
       headers["Content-Length"] = String(end - start + 1);
-      return new Response(new Uint8Array(buffer.subarray(start, end + 1)), {
-        status: 206,
-        headers,
-      });
     }
-    return new Response(new Uint8Array(buffer), { headers });
+    const stream=await mediaStream(owner,id,metadata,selected,request.signal);
+    return new Response(stream,{status:range ? 206 : 200,headers});
   } catch (error) {
     const failure = safeError(
       error instanceof z.ZodError

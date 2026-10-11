@@ -23,6 +23,7 @@ export async function claimJob(id: string): Promise<ClaimedJob | null> {
     const row = result.rows[0];
     if (row.cancel_requested || row.attempts>=row.max_attempts || (row.deadline_at && new Date(row.deadline_at).getTime()<=Date.now())) {
       await client.query("UPDATE vidio_jobs SET status=$2,error_code=$3,error=$4,completed_at=now(),updated_at=now(),retryable=false WHERE id=$1",[id,row.cancel_requested ? "cancelled" : "failed",row.cancel_requested ? null : "TIMEOUT",row.cancel_requested ? null : "Job deadline or attempt limit reached"]);
+      await client.query("UPDATE vidio_job_segments SET status='failed',error_code=CASE WHEN status='submitting' AND provider_task_id IS NULL THEN 'SUBMISSION_UNKNOWN' ELSE coalesce(error_code,$2) END,error='Job stopped before segment completion',updated_at=now() WHERE job_id=$1 AND status NOT IN ('completed','failed')",[id,row.cancel_requested ? "CANCELLED" : "TIMEOUT"]);
       await client.query("UPDATE vidio_projects SET data=data-'activeJobId' WHERE id=$1 AND owner_id=$2 AND data->>'activeJobId'=$3",[row.project_id,row.owner_id,id]);
       return null;
     }

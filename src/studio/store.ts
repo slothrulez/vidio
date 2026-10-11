@@ -271,7 +271,7 @@ export async function startJob(
     validateOperation(operation, project, input);
     if (mode === "production" && operation !== "compose_video") {
       const ordinals=operation==="regenerate_segment" ? [input.segmentId!] : project.scripts.map(script=>script.id);
-      const unresolved=await client.query("SELECT id FROM vidio_job_segments WHERE project_id=$1 AND owner_id=$2 AND ordinal=ANY($3::int[]) AND (error_code='SUBMISSION_UNKNOWN' OR (provider_task_id IS NOT NULL AND status='failed' AND error_code IN ('TIMEOUT','POLL','STORAGE','WORKER_ERROR','CANCELLED'))) LIMIT 1",[project.id,owner,ordinals]);
+      const unresolved=await client.query("SELECT id FROM vidio_job_segments WHERE project_id=$1 AND owner_id=$2 AND ordinal=ANY($3::int[]) AND (error_code='SUBMISSION_UNKNOWN' OR status='submitting' OR (provider_task_id IS NOT NULL AND asset_id IS NULL AND NOT (status='failed' AND error_code='PROVIDER_FAILED'))) LIMIT 1",[project.id,owner,ordinals]);
       if (unresolved.rows.length) throw new StudioError("RECONCILIATION","Reconcile the previous provider submission before approving another paid request for this scene",409);
       const dailyLimit=Number(process.env.VIDIO_MAX_PAID_SEGMENTS_PER_OWNER_DAY);
       if (process.env.VIDIO_PAID_GENERATION_ENABLED !== "true" || !Number.isInteger(dailyLimit) || dailyLimit<1 || dailyLimit>100)

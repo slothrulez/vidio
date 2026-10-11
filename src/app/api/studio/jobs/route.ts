@@ -5,6 +5,7 @@ import { startJob } from "@/studio/store";
 import { jobInputSchema } from "@/studio/types";
 import { boundedBody } from "@/studio/request";
 import { safeError } from "@/studio/service";
+import { rateLimit } from "@/studio/rate-limit";
 
 export const runtime="nodejs";
 export async function POST(request:Request) {
@@ -12,6 +13,7 @@ export async function POST(request:Request) {
     studioMode();
     checkOrigin(request);
     const owner=await actor(request);
+    await rateLimit(owner);
     const body=z.object({operation:z.enum(["generate_segments","regenerate_segment","compose_video"]),input:jobInputSchema}).strict().parse(JSON.parse(new TextDecoder().decode(await boundedBody(request,20_000))));
     const job=await startJob(owner,body.operation,body.input);
     return Response.json({jobId:job.id,status:job.lifecycleStatus,job},{status:202,headers:{Location:`/api/studio/jobs/${job.id}`,"Cache-Control":"no-store"}});

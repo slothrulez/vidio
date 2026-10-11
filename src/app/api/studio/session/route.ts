@@ -1,15 +1,23 @@
 import { NextResponse } from "next/server";
-import { checkOrigin, publicOrigin } from "@/studio/config";
+import { checkOrigin, publicOrigin, studioMode } from "@/studio/config";
 import { actor, previewSession } from "@/studio/auth";
 import { safeError } from "@/studio/service";
+import { rateLimit } from "@/studio/rate-limit";
+import { StudioError } from "@/studio/types";
 
 export async function POST(request: Request) {
   try {
     checkOrigin(request);
+    const mode = studioMode();
+    if (mode === "production") {
+      await rateLimit(await actor(request));
+      return NextResponse.json({ mode });
+    }
     try {
-      await actor(request);
+      await rateLimit(await actor(request));
       return NextResponse.json({ mode: "demo" });
-    } catch {
+    } catch (error) {
+      if (!(error instanceof StudioError) || error.code !== "AUTH") throw error;
       /* Bootstrap only the explicit demo mode. */
     }
     const token = await previewSession();

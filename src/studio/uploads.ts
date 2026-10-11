@@ -185,7 +185,7 @@ export async function executeUpload(
       );
     if (data.length !== row.expected_size)
       throw new StudioError("UPLOAD", "Image upload is incomplete", 409);
-    validateImage(data, row.mime);
+    await validateImage(data, row.mime);
     const assetId = await registerAsset(
       owner,
       project.id,

@@ -41,6 +41,14 @@ export class PrivateObjectStore {
     await this.verifyPrivate();
     return getSignedUrl(this.client,new GetObjectCommand({Bucket:this.bucket,Key:key}),{expiresIn:600});
   }
+  async range(key:string,start:number,end:number,size:number,signal:AbortSignal) {
+    await this.verifyPrivate();
+    try {
+      const result=await this.client.send(new GetObjectCommand({Bucket:this.bucket,Key:key,Range:`bytes=${start}-${end}`}),{abortSignal:AbortSignal.any([signal,AbortSignal.timeout(30_000)])});
+      if (!result.Body || result.ContentLength!==end-start+1 || result.ContentRange!==`bytes ${start}-${end}/${size}`) throw new Error("Asset range mismatch");
+      return result.Body as AsyncIterable<Uint8Array>;
+    } catch { throw new StudioError("STORAGE","Private media retrieval failed",503); }
+  }
   async remove(key:string) {
     await this.client.send(new DeleteObjectCommand({Bucket:this.bucket,Key:key}), {abortSignal:AbortSignal.timeout(10_000)});
   }

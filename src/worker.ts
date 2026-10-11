@@ -9,6 +9,7 @@ import { ArkVideoProvider,executeVideoJob } from "./studio/video-provider";
 import { composedAsset,composedCaption,persistComposition } from "./studio/lifecycle";
 import { claimJob, heartbeat, completeJob, failJob, recoverJobs, completedSegment, persistSegment, type ClaimedJob } from "./studio/lifecycle";
 import { StudioError, type StudioProject } from "./studio/types";
+import { cleanupAssets } from "./studio/assets";
 
 config({ path: ".env.local", quiet: true });
 export const queueName = "vidio-preview";
@@ -80,11 +81,16 @@ export async function startWorker(execute: JobExecutor = managedExecutor) {
     for (const task of jobs) await runJob(task.data.jobId,execute);
   });
   let dispatching = false;
+  let cleanedAt = 0;
   async function dispatch() {
     if (dispatching) return;
     dispatching = true;
     try {
       await recoverJobs();
+      if (Date.now()-cleanedAt>60_000) {
+        try {await cleanupAssets();cleanedAt=Date.now();}
+        catch {console.error("Media cleanup deferred; quota reservations retained.");}
+      }
       await database().query("UPDATE vidio_jobs SET queue_id=NULL WHERE status='queued' AND dispatched_at<now()-$1*interval '1 second'", [limits.timeoutSeconds + limits.leaseSeconds]);
       const pending = await database().query("SELECT j.id FROM vidio_jobs j JOIN vidio_projects p ON p.id=j.project_id WHERE j.status='queued' AND j.queue_id IS NULL AND j.next_attempt_at<=now() AND p.data->>'mode'=$1 ORDER BY j.created_at LIMIT 20",[mode]);
       for (const row of pending.rows) {

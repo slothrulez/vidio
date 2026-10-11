@@ -41,13 +41,14 @@ export type EmbeddedTransport = {
   openLink?: (url: string) => Promise<void>;
   updateContext?: (project: StudioProject) => Promise<void>;
 };
-type Action = {
+type ActionRequest = {
   name: "start_video_job" | "regenerate_segment" | "compose_final_video";
   segmentId?: number;
   segmentIds?: number[];
   composition?: CompositionOptions;
 };
-type Draft = { script: string; prompt: string };
+type Action = ActionRequest & {projectId:string;revision:number};
+type Draft = { script: string; prompt: string; revision:number };
 
 function ActionConfirmation({
   action,
@@ -148,6 +149,7 @@ export function EmbeddedStudio({
       (draft.script !== original.script || draft.prompt !== original.prompt)
     );
   });
+  const draftConflict=hasEdits && Object.values(drafts).some(draft=>draft.revision!==project?.revision);
 
   const apply = useCallback((result: ToolResponse) => {
     const next = result.structuredContent.project;
@@ -156,6 +158,8 @@ export function EmbeddedStudio({
       return;
     }
     if (next) {
+      if (projectRef.current?.id===next.id && next.revision<projectRef.current.revision) return;
+      if (projectRef.current?.id!==next.id || projectRef.current.revision!==next.revision) setAction(undefined);
       if (projectRef.current?.id !== next.id) {
         setDrafts({});
         setJob(undefined);
@@ -177,7 +181,7 @@ export function EmbeddedStudio({
       nextJob &&
       (!projectRef.current || nextJob.projectId === projectRef.current.id)
     )
-      setJob(nextJob);
+      setJob(old=>old?.id===nextJob.id && old.updatedAt && nextJob.updatedAt && old.updatedAt>nextJob.updatedAt ? old : nextJob);
     if (result._meta?.media) {
       setMedia((old) => ({ ...old, ...result._meta!.media }));
       setExpiresAt(result._meta.mediaExpiresAt);
@@ -323,6 +327,9 @@ export function EmbeddedStudio({
         apply(result);
         failures = 0;
         if (!jobIsActive(result.structuredContent.job)) {
+          const final=await transport.callTool("get_project",{projectId});
+          if (!alive || projectRef.current?.id!==projectId) return;
+          apply(final);
           if (result.structuredContent.job?.error)
             setError(result.structuredContent.job.error);
           return;
@@ -367,10 +374,11 @@ export function EmbeddedStudio({
 
   const start = async (request: Action) => {
     const current = projectRef.current;
-    if (!current) return;
+    if (!current || request.projectId!==current.id || request.revision!==current.revision) {
+      setError("Project changed; review it and confirm again.");
+      return;
+    }
     const args = {
-      projectId: current.id,
-      revision: current.revision,
       confirmed: true,
       ...request,
     };
@@ -474,9 +482,10 @@ export function EmbeddedStudio({
     outputIsReady(project, readyAsset, finalUrl) &&
     !mediaErrors[project.finalAssetId!];
   const sceneList = project ? sceneStates(project, job) : [];
-  const requestAction = (request: Action, trigger: HTMLButtonElement) => {
+  const requestAction = (request: ActionRequest, trigger: HTMLButtonElement) => {
+    if (!project) return;
     actionTrigger.current = trigger;
-    setAction(request);
+    setAction({...request,projectId:project.id,revision:project.revision});
   };
   const confirmation = action && project ? (
     <ActionConfirmation
@@ -778,6 +787,7 @@ export function EmbeddedStudio({
                             [script.id]: {
                               prompt: old[script.id]?.prompt ?? script.prompt,
                               script: event.target.value,
+                              revision: old[script.id]?.revision ?? project.revision,
                             },
                           }));
                         }}
@@ -800,6 +810,7 @@ export function EmbeddedStudio({
                             [script.id]: {
                               script: old[script.id]?.script ?? script.script,
                               prompt: event.target.value,
+                              revision: old[script.id]?.revision ?? project.revision,
                             },
                           }));
                         }}
@@ -812,6 +823,7 @@ export function EmbeddedStudio({
                 variant="outline"
                 disabled={
                   busy ||
+                  draftConflict ||
                   !hasEdits ||
                   project.scripts.some(
                     (script) =>
@@ -825,8 +837,9 @@ export function EmbeddedStudio({
                       projectId: project.id,
                       revision: project.revision,
                       scripts: project.scripts.map((script) => ({
-                        ...script,
-                        ...drafts[script.id],
+                        id:script.id,
+                        script:drafts[script.id]?.script ?? script.script,
+                        prompt:drafts[script.id]?.prompt ?? script.prompt,
                       })),
                     }),
                   );
@@ -842,6 +855,12 @@ export function EmbeddedStudio({
                 <p className="text-sm text-purple-700">
                   Unsaved edits — save before approval or generation.
                 </p>
+              )}
+              {draftConflict && (
+                <div role="alert" className="text-sm text-red-700">
+                  This project changed while you were editing. Your draft has not been saved.
+                  <Button variant="outline" onClick={()=>{setDrafts({});setApproval(undefined);}}>Discard conflicted edits</Button>
+                </div>
               )}
               <label className="flex items-center gap-2 text-sm">
                 <Checkbox

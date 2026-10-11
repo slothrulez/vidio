@@ -6,6 +6,35 @@ import { StudioError,type StudioProject,type scriptSchema } from "./types";
 import type { ExecutionContext } from "./demo";
 import { MAX_ASSET_BYTES } from "./object-store";
 import { boundedBody } from "./request";
+import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+
+const run=promisify(execFile);
+export async function probeVideo(file:string,ratio:StudioProject["ratio"],signal?:AbortSignal,maxDuration=30) {
+  try {
+    const result=await run("ffprobe",["-v","error","-show_entries","stream=codec_type,codec_name,width,height,duration,channels","-of","json",file],{signal,timeout:10_000,maxBuffer:10_000});
+    const {streams}=z.object({streams:z.array(z.object({codec_type:z.string(),codec_name:z.string(),width:z.number().optional(),height:z.number().optional(),duration:z.coerce.number().optional(),channels:z.number().optional()})).max(8)}).parse(JSON.parse(result.stdout));
+    const video=streams.filter(stream=>stream.codec_type==="video"),audio=streams.filter(stream=>stream.codec_type==="audio");
+    const expected=ratio==="16:9" ? 16/9 : ratio==="9:16" ? 9/16 : 1;
+    const v=video[0],a=audio[0];
+    if (video.length!==1 || audio.length!==1 || v.codec_name!=="h264" || a.codec_name!=="aac" || !v.width || !v.height || v.width<64 || v.height<64 || v.width>1920 || v.height>1920 || Math.abs(v.width/v.height-expected)>0.03 || !v.duration || !a.duration || v.duration<1 || v.duration>maxDuration || Math.abs(v.duration-a.duration)>0.5 || !a.channels || a.channels>2) throw new Error("Unsupported video");
+    await run("ffmpeg",["-hide_banner","-loglevel","error","-xerror","-i",file,"-map","0:v:0","-map","0:a:0","-f","null","-"],{signal,timeout:30_000,maxBuffer:10_000});
+    return v.duration;
+  } catch {throw new StudioError("PROVIDER_MEDIA","Video failed bounded format, timeline or audio validation",503);}
+}
+
+export async function validateProviderVideo(buffer:Buffer,ratio:StudioProject["ratio"],signal?:AbortSignal) {
+  if (!buffer.length || buffer.length>MAX_ASSET_BYTES) throw new StudioError("ASSET_LIMIT","Provider video exceeds the media byte limit",413);
+  const workspace=await mkdtemp(path.join(tmpdir(),"vidio-probe-"));
+  try {
+    const file=path.join(workspace,"segment.mp4");
+    await writeFile(file,buffer,{mode:0o600});
+    return await probeVideo(file,ratio,signal);
+  } finally {await rm(workspace,{recursive:true,force:true});}
+}
 
 type Script = z.infer<typeof scriptSchema>;
 const taskSchema=z.object({id:z.string().min(1).max(200),status:z.enum(["queued","running","succeeded","failed","cancelled","expired"]),content:z.object({video_url:z.string().url().optional()}).optional(),duration:z.number().positive().max(30).optional()});
@@ -84,7 +113,8 @@ export async function executeVideoJob(job:ClaimedJob,project:StudioProject,conte
         if (task.status==="succeeded") {
           if (!task.content?.video_url) throw new StudioError("PROVIDER_FAILED","Completed provider task has no video");
           const buffer=await provider.download(task.content.video_url,context.signal);
-          return {id:script.id,assetId:await registerAsset(job.owner,project.id,"video/mp4",buffer),duration:task.duration ?? 5,script:script.script};
+          const duration=await validateProviderVideo(buffer,project.ratio,context.signal);
+          return {id:script.id,assetId:await registerAsset(job.owner,project.id,"video/mp4",buffer),duration,script:script.script};
         }
         await delay(5000,undefined,{signal:context.signal});
       }

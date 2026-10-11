@@ -3,13 +3,20 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { Readable } from "node:stream";
-import { SignJWT,generateKeyPair,exportJWK } from "jose";
-import { S3Client,PutObjectCommand,GetObjectCommand,GetPublicAccessBlockCommand } from "@aws-sdk/client-s3";
-import { database } from "../src/studio/db";
+import { SignJWT,generateKeyPair,exportJWK,type JWTPayload } from "jose";
+import { S3Client,PutObjectCommand,GetObjectCommand,GetPublicAccessBlockCommand,DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { database,transaction } from "../src/studio/db";
 import { createProject,getProject,getJob,startJob } from "../src/studio/store";
 import { runJob } from "../src/worker";
 import { executeVideoJob,type VideoProvider } from "../src/studio/video-provider";
-import { mediaToken,readAsset,signedAssetUrl,registerAsset } from "../src/studio/assets";
+import { mediaToken,readAsset,signedAssetUrl,registerAsset,cleanupAssets } from "../src/studio/assets";
+import { rateLimit } from "../src/studio/rate-limit";
+import { signingKey } from "../src/studio/config";
+import { claimJob,providerCheckpoint,recoverJobs,completedSegment } from "../src/studio/lifecycle";
+import { executeTool } from "../src/studio/service";
+import { videoFixture } from "./fixtures/video";
+import { validateProviderVideo } from "../src/studio/video-provider";
+import { composeOwnedSegments } from "../src/studio/composition";
 import { PrivateObjectStore,objectKey } from "../src/studio/object-store";
 import { StudioError } from "../src/studio/types";
 import { POST as start } from "../src/app/api/studio/jobs/route";
@@ -18,28 +25,38 @@ import { POST as retry } from "../src/app/api/studio/jobs/[jobId]/retry/route";
 import { PUT as scripts } from "../src/app/api/studio/projects/[projectId]/scripts/route";
 import { POST as upload } from "../src/app/api/studio/upload/route";
 import { GET as media } from "../src/app/api/media/[assetId]/route";
+import { POST as session } from "../src/app/api/studio/session/route";
+import { POST as tools } from "../src/app/api/studio/tools/route";
+import { POST as mcp } from "../src/app/mcp/route";
 
 const url=process.env.TEST_DATABASE_URL;
 if (!url || !new URL(url).pathname.endsWith("_test")) throw new Error("Use a disposable TEST_DATABASE_URL ending in _test");
 process.env.DATABASE_URL=url;
-Object.assign(process.env,{VIDIO_MODE:"production",VIDIO_PUBLIC_ORIGIN:"https://vidio.example.test",OAUTH_ISSUER:"https://issuer.example.test",OAUTH_JWKS_URL:"https://issuer.example.test/jwks",OAUTH_AUDIENCE:"vidio-test",VIDIO_MEDIA_SECRET:"test-only-media-secret-not-a-real-key",S3_BUCKET_NAME:"private-test-bucket",S3_REGION:"us-east-1",S3_ACCESS_KEY_ID:"test-only",S3_SECRET_ACCESS_KEY:"test-only",VIDIO_PAID_GENERATION_ENABLED:"true",VIDIO_MAX_PAID_SEGMENTS_PER_OWNER_DAY:"3"});
+Object.assign(process.env,{VIDIO_MODE:"production",VIDIO_MCP_LOCAL_AUTH:"false",VIDIO_PUBLIC_ORIGIN:"https://vidio.example.test",OAUTH_ISSUER:"https://issuer.example.test",OAUTH_JWKS_URL:"https://issuer.example.test/jwks",OAUTH_AUDIENCE:"vidio-test",VIDIO_MEDIA_SECRET:"test-only-media-secret-not-a-real-key",S3_BUCKET_NAME:"private-test-bucket",S3_REGION:"us-east-1",S3_ACCESS_KEY_ID:"test-only",S3_SECRET_ACCESS_KEY:"test-only",VIDIO_PAID_GENERATION_ENABLED:"true",VIDIO_MAX_PAID_SEGMENTS_PER_OWNER_DAY:"3"});
 const subject=`production-test-${randomUUID()}`;
 const owner=`${process.env.OAUTH_ISSUER}|${subject}`;
 let token="";
 let otherToken="";
+let signToken:(claims?:JWTPayload)=>Promise<string>;
+let clip:Buffer;
+const ranges:Array<string|undefined>=[];
+let deletionFails=false;
+let putProbe:(()=>Promise<void>)|undefined;
 const objects=new Map<string,{buffer:Buffer;mime:string}>();
 let privateBucket=true;
 before(async()=>{
-  for (const name of ["0001_studio.sql","0002_job_lifecycle.sql","0003_result_ownership.sql","0004_widget_uploads.sql"]) await database().query(await readFile(`migrations/${name}`,"utf8"));
+  for (const name of ["0001_studio.sql","0002_job_lifecycle.sql","0003_result_ownership.sql","0004_widget_uploads.sql","0005_release_safety.sql"]) await database().query(await readFile(`migrations/${name}`,"utf8"));
   const {publicKey,privateKey}=await generateKeyPair("RS256");
+  clip=await videoFixture();
   const jwk={...await exportJWK(publicKey),kid:"test-key",alg:"RS256",use:"sig"};
   mock.method(globalThis,"fetch",async()=>Response.json({keys:[jwk]}));
-  const sign=(sub:string)=>new SignJWT({scope:"vidio:studio"}).setProtectedHeader({alg:"RS256",kid:"test-key"}).setSubject(sub).setIssuer(process.env.OAUTH_ISSUER!).setAudience("vidio-test").setIssuedAt().setExpirationTime("1h").sign(privateKey);
-  token=await sign(subject);
-  otherToken=await sign("other-user");
+  signToken=(claims={})=>new SignJWT({scope:"vidio:studio",sub:subject,iss:process.env.OAUTH_ISSUER!,aud:"vidio-test",exp:Math.floor(Date.now()/1000)+3600,...claims}).setProtectedHeader({alg:"RS256",kid:"test-key"}).sign(privateKey);
+  token=await signToken();
+  otherToken=await signToken({sub:"other-user"});
   mock.method(S3Client.prototype,"send",async(command:unknown)=>{
     if (command instanceof GetPublicAccessBlockCommand) return {PublicAccessBlockConfiguration:{BlockPublicAcls:privateBucket,IgnorePublicAcls:true,BlockPublicPolicy:true,RestrictPublicBuckets:true}};
     if (command instanceof PutObjectCommand) {
+      await putProbe?.();
       assert.equal(command.input.ACL,undefined);
       assert.equal(command.input.CacheControl,"private, no-store");
       assert.ok(Buffer.isBuffer(command.input.Body));
@@ -47,10 +64,18 @@ before(async()=>{
       return {};
     }
     if (command instanceof GetObjectCommand) {
+      ranges.push(command.input.Range);
       const object=objects.get(command.input.Key!);
       if (!object) throw new Error("Missing test object");
+      if (command.input.Range) {
+        const match=/^bytes=(\d+)-(\d+)$/.exec(command.input.Range)!;
+        const start=Number(match[1]),end=Number(match[2]);
+        const part=object.buffer.subarray(start,end+1);
+        return {Body:Readable.from([part]),ContentLength:part.length,ContentRange:`bytes ${start}-${end}/${object.buffer.length}`,ContentType:object.mime};
+      }
       return {Body:Readable.from([object.buffer]),ContentLength:object.buffer.length,ContentType:object.mime};
     }
+    if (command instanceof DeleteObjectCommand) {if (deletionFails) throw new Error("Mock deletion failure");objects.delete(command.input.Key!);return {};}
     throw new Error("Unexpected storage command");
   });
 });
@@ -86,7 +111,7 @@ test("authenticated production API returns an immediate job ID and resumes known
       if (id==="task-2" && transient) {transient=false;throw new StudioError("POLL","Mock transient error");}
       return {id,status:"succeeded",duration:5,content:{video_url:"https://cdn.example.test/video.mp4"}};
     },
-    download:async()=>Buffer.from("\x00\x00\x00\x18ftypmock-production-video"),
+    download:async()=>clip,
   };
   await runJob(jobId,(job,project,context)=>executeVideoJob(job,project,context,provider));
   const partial=await getJob(owner,jobId);
@@ -99,6 +124,7 @@ test("authenticated production API returns an immediate job ID and resumes known
   const completed=await getJob(owner,jobId);
   assert.equal(completed.lifecycleStatus,"completed");
   assert.equal(completed.segments?.[0].assetId,firstAsset);
+  assert.equal(completed.segments?.[0].duration,2);
   project=await getProject(owner,project.id);
   const regenerate=await startJob(owner,"regenerate_segment",{...input,revision:project.revision,segmentId:2,idempotencyKey:randomUUID()});
   await runJob(regenerate.id,(job,project,context)=>executeVideoJob(job,project,context,provider));
@@ -160,8 +186,145 @@ test("production uploads validate bytes, MIME, size and project ownership before
   assert.equal((await send(png,"image/png",otherToken)).status,404);
   assert.equal(objects.size,writes);
   assert.equal((await upload(new Request("https://vidio.example.test/api/studio/upload",{method:"POST",headers:{Authorization:`Bearer ${token}`,"Content-Length":"5100001"},body:"x"}))).status,413);
-  assert.equal((await send(png,"image/png")).status,200);
+  const uploaded=await send(png,"image/png");
+  assert.equal(uploaded.status,200);
+  assert.equal((await uploaded.json()).structuredContent.mode,"production");
   const saved=await getProject(owner,project.id);
   assert.ok(saved.imageAssetId);
   assert.equal((await readAsset(owner,saved.imageAssetId!)).mime,"image/png");
+});
+test("OAuth negative cases fail on every protected HTTP surface without bootstrapping demo sessions",async()=>{
+  const invalid=["", "forged",await signToken({exp:Math.floor(Date.now()/1000)-10}),await signToken({iss:"https://wrong.example.test"}),await signToken({aud:"other-app"}),await signToken({scope:"other:scope"}),await signToken({scope:undefined}),await signToken({exp:undefined}),await signToken({sub:undefined}),await new SignJWT({sub:subject,scope:"vidio:studio"}).setProtectedHeader({alg:"HS256"}).setIssuer(process.env.OAUTH_ISSUER!).setAudience("vidio-test").setExpirationTime("1h").sign(signingKey())];
+  for (const bearer of invalid) {
+    const calls=[start(request("/jobs",{},bearer)),status(request("/jobs",undefined,bearer),params(randomUUID())),retry(request("/retry",{},bearer),params(randomUUID())),scripts(request("/scripts",{},bearer),{params:Promise.resolve({projectId:randomUUID()})}),upload(request("/upload",{},bearer)),tools(request("/tools",{},bearer)),session(request("/session",{},bearer)),mcp(request("/mcp",{},bearer))];
+    for (const response of await Promise.all(calls)) {
+      assert.equal(response.status,401);
+      assert.equal(response.headers.has("set-cookie"),false);
+      assert.match((await response.json()).error.message,/token|Bearer|scope/i);
+    }
+  }
+  const response=await session(request("/session",{}));
+  assert.equal(response.status,200);
+  assert.equal((await response.json()).mode,"production");
+  assert.equal(response.headers.has("set-cookie"),false);
+  assert.equal((await tools(new Request("https://vidio.example.test/tools",{method:"POST",headers:{Authorization:`Bearer ${token}`,Origin:"https://attacker.example.test"},body:"{}"}))).status,403);
+});
+test("ranges reject before storage reads, expiry stays private, and concurrent streams release admission",async()=>{
+  const project=await createProject(owner,{name:"Range safety",language:"english",ratio:"16:9"});
+  const id=await registerAsset(owner,project.id,"video/mp4",clip);
+  const base=`https://vidio.example.test/api/media/${id}?token=${await mediaToken(owner,id)}`;
+  const send=(range:string)=>media(new Request(base,{headers:{Range:range}}),{params:Promise.resolve({assetId:id})});
+  const count=ranges.length;
+  assert.equal((await send("bytes=99999999999999999-")).status,416);
+  assert.equal((await send("bytes=0-1,3-4")).status,416);
+  assert.equal(ranges.length,count);
+  const tiny=await send("bytes=0-0");
+  assert.equal(tiny.status,206);
+  assert.equal((await tiny.arrayBuffer()).byteLength,1);
+  assert.equal(ranges.at(-1),"bytes=0-0");
+  const suffix=await send("bytes=-7");
+  assert.equal((await suffix.arrayBuffer()).byteLength,7);
+  const open=await Promise.all(Array.from({length:4},()=>send("bytes=0-")));
+  assert.ok(open.every(response=>response.status===206));
+  assert.equal((await send("bytes=0-")).status,429);
+  await Promise.all(open.map(response=>response.body!.cancel()));
+  const again=await send("bytes=0-0");assert.equal(again.status,206);await again.arrayBuffer();
+  const expiredClaims=await new SignJWT({assetId:id}).setProtectedHeader({alg:"HS256"}).setSubject(owner).setIssuer("vidio-preview").setAudience("vidio-media").setExpirationTime(Math.floor(Date.now()/1000)-10).sign(signingKey());
+  const rejected=await media(new Request(`https://vidio.example.test/api/media/${id}?token=${expiredClaims}`),{params:Promise.resolve({assetId:id})});
+  assert.equal(rejected.status,401);
+  assert.equal(JSON.stringify(await rejected.json()).includes(expiredClaims),false);
+});
+test("storage intents survive rollback, stay quota-accounted and clean up without deleting committed assets",async()=>{
+  const project=await createProject(owner,{name:"Write rollback",language:"english",ratio:"16:9"});
+  const keep=await registerAsset(owner,project.id,"video/mp4",clip);
+  let orphan="";
+  await assert.rejects(()=>transaction(async client=>{
+    orphan=await registerAsset(owner,project.id,"video/mp4",clip,client);
+    throw new Error("Mock caller rollback");
+  }));
+  assert.equal((await database().query("SELECT id FROM vidio_assets WHERE id=$1",[orphan])).rows.length,0);
+  assert.equal((await database().query("SELECT id FROM vidio_asset_intents WHERE id=$1",[orphan])).rows.length,1);
+  assert.ok(objects.has(objectKey(project.id,orphan)));
+  await database().query("UPDATE vidio_asset_intents SET created_at=now()-interval '3 hours' WHERE id=ANY($1::uuid[])",[[keep,orphan]]);
+  deletionFails=true;
+  try {
+    await cleanupAssets();
+    assert.ok(objects.has(objectKey(project.id,orphan)));
+    assert.equal((await database().query("SELECT id FROM vidio_asset_intents WHERE id=$1",[orphan])).rows.length,1);
+  } finally {deletionFails=false;}
+  await cleanupAssets();
+  assert.equal(objects.has(objectKey(project.id,orphan)),false);
+  assert.equal((await database().query("SELECT id FROM vidio_asset_intents WHERE id=$1",[orphan])).rows.length,0);
+  assert.ok(objects.has(objectKey(project.id,keep)));
+  assert.equal((await readAsset(owner,keep)).buffer.length,clip.length);
+  const reservation=randomUUID();
+  await database().query("INSERT INTO vidio_asset_intents(id,owner_id,project_id,size,storage_backend) VALUES($1,$2,$3,1000000000,'s3')",[reservation,owner,project.id]);
+  try {await assert.rejects(()=>registerAsset(owner,project.id,"video/mp4",clip),(error:unknown)=>error instanceof StudioError && error.code==="LIMIT");}
+  finally {await database().query("DELETE FROM vidio_asset_intents WHERE id=$1",[reservation]);}
+});
+test("global storage quota lock is released before remote writes",async()=>{
+  const project=await createProject(owner,{name:"Quota lock scope",language:"english",ratio:"16:9"});
+  let checked=false;
+  putProbe=async()=>{
+    const client=await database().connect();
+    try {
+      const acquired=(await client.query("SELECT pg_try_advisory_lock(4112027) AS acquired")).rows[0].acquired;
+      assert.equal(acquired,true);
+      if (acquired) await client.query("SELECT pg_advisory_unlock(4112027)");
+      checked=true;
+    } finally {client.release();}
+  };
+  try {await registerAsset(owner,project.id,"video/mp4",clip);assert.equal(checked,true);}
+  finally {putProbe=undefined;}
+});
+test("durable request limits isolate owners, roll over and return HTTP429",async()=>{
+  const limited=`rate-${randomUUID()}`;
+  await database().query("INSERT INTO vidio_request_limits VALUES($1,date_trunc('minute',now()),240)",[limited]);
+  await assert.rejects(()=>rateLimit(limited),(error:unknown)=>error instanceof StudioError && error.code==="RATE_LIMIT");
+  await rateLimit(`other-${limited}`);
+  await database().query("UPDATE vidio_request_limits SET window_at=now()-interval '2 minutes' WHERE owner_id=$1",[limited]);
+  await rateLimit(limited);
+  assert.equal((await database().query("SELECT requests FROM vidio_request_limits WHERE owner_id=$1",[limited])).rows[0].requests,1);
+  const limitedToken=await signToken({sub:limited}),limitedOwner=`${process.env.OAUTH_ISSUER}|${limited}`;
+  await database().query("INSERT INTO vidio_request_limits VALUES($1,date_trunc('minute',now()),240)",[limitedOwner]);
+  assert.equal((await session(request("/session",{},limitedToken))).status,429);
+  assert.equal((await mcp(request("/mcp",{},limitedToken))).status,429);
+});
+test("lost submitted tasks cannot bypass reconciliation through claim deadlines and new keys",async()=>{
+  process.env.VIDIO_MAX_PAID_SEGMENTS_PER_OWNER_DAY="20";
+  try {
+    const project=await createProject(owner,{name:"Lost task",language:"english",ratio:"16:9"});
+    await scripts(request("/scripts",{revision:0,scripts:[{id:1,script:"Approved",prompt:"Mock"}]}),{params:Promise.resolve({projectId:project.id})});
+    const input={projectId:project.id,revision:1,confirmed:true,idempotencyKey:randomUUID()};
+    const job=await startJob(owner,"generate_segments",input),claimed=(await claimJob(job.id))!;
+    await completedSegment(claimed,1);
+    await providerCheckpoint(claimed,1);
+    await providerCheckpoint(claimed,1,"known-provider-task");
+    await database().query("UPDATE vidio_jobs SET lease_until=now()-interval '1 second' WHERE id=$1",[job.id]);
+    await recoverJobs();
+    await database().query("UPDATE vidio_jobs SET deadline_at=now()-interval '1 second',next_attempt_at=now() WHERE id=$1",[job.id]);
+    assert.equal(await claimJob(job.id),null);
+    const stopped=await getJob(owner,job.id);
+    assert.equal(stopped.status,"failed");
+    assert.equal(stopped.segments?.[0].status,"failed");
+    assert.equal((await executeTool(owner,"get_project",{projectId:project.id})).structuredContent.job?.id,job.id);
+    const current=await getProject(owner,project.id);
+    await assert.rejects(()=>startJob(owner,"generate_segments",{...input,revision:current.revision,idempotencyKey:randomUUID()}),(error:unknown)=>error instanceof StudioError && error.code==="RECONCILIATION");
+  } finally {process.env.VIDIO_MAX_PAID_SEGMENTS_PER_OWNER_DAY="3";}
+});
+test("production video validation derives real duration and rejects malformed files, missing audio and wrong ratios",async()=>{
+  assert.equal(await validateProviderVideo(clip,"16:9"),2);
+  await assert.rejects(()=>validateProviderVideo(Buffer.from("\x00\x00\x00\x18ftyptruncated"),"16:9"));
+  await assert.rejects(()=>validateProviderVideo(clip,"9:16"));
+  const silent=await videoFixture("16:9",false);
+  await assert.rejects(()=>validateProviderVideo(silent,"16:9"));
+  assert.equal(await validateProviderVideo(await videoFixture("9:16"),"9:16"),2);
+  const project=await createProject(owner,{name:"Composition budget",language:"english",ratio:"16:9"});
+  const id=await registerAsset(owner,project.id,"video/mp4",clip);
+  project.segments=[{id:1,assetId:id,duration:2,script:"Test"}];
+  await database().query("UPDATE vidio_assets SET size=90000000 WHERE id=$1",[id]);
+  const before=ranges.length;
+  await assert.rejects(()=>composeOwnedSegments(owner,project,[1]),(error:unknown)=>error instanceof StudioError && error.code==="ASSET_LIMIT");
+  assert.equal(ranges.length,before);
+  await database().query("UPDATE vidio_assets SET size=$2 WHERE id=$1",[id,clip.length]);
 });

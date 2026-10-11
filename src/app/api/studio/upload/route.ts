@@ -8,13 +8,15 @@ import { StudioError } from "@/studio/types";
 import { safeError } from "@/studio/service";
 import { z } from "zod";
 import { boundedBody } from "@/studio/request";
+import { rateLimit } from "@/studio/rate-limit";
 
 export const runtime = "nodejs";
 export async function POST(request: Request) {
   try {
-    studioMode();
+    const mode = studioMode();
     checkOrigin(request);
     const owner = await actor(request);
+    await rateLimit(owner);
     if (Number(request.headers.get("content-length")) > 5_100_000)
       throw new StudioError("SIZE", "Upload exceeds 5 MB", 413);
     const body = await boundedBody(request, 5_100_000);
@@ -33,7 +35,7 @@ export async function POST(request: Request) {
     if (!(image instanceof File) || image.size > 5_000_000)
       throw new StudioError("UPLOAD", "Upload a PNG or JPEG under 5 MB");
     const buffer = Buffer.from(await image.arrayBuffer());
-    validateImage(buffer, image.type);
+    await validateImage(buffer, image.type);
     const project = await transaction(async (client) => {
       await client.query(
         "SELECT id FROM vidio_projects WHERE id=$1 AND owner_id=$2 FOR UPDATE",
@@ -67,10 +69,10 @@ export async function POST(request: Request) {
     });
     return NextResponse.json({
       structuredContent: {
-        mode: "demo",
+        mode,
         project,
         message:
-          "Image uploaded privately. Demo recognition is a fixture, not an image analysis.",
+          mode === "demo" ? "Image uploaded privately. Demo recognition is a fixture, not an image analysis." : "Image uploaded privately. Production recognition requires a configured live adapter.",
       },
       _meta: { media: await projectMedia(owner, project) },
     });

@@ -32,6 +32,7 @@ test("durable owned projects/jobs enforce revisions, concurrency, idempotency an
   await database().query(await readFile("migrations/0002_job_lifecycle.sql", "utf8"));
   await database().query(await readFile("migrations/0003_result_ownership.sql", "utf8"));
   await database().query(await readFile("migrations/0004_widget_uploads.sql", "utf8"));
+  await database().query(await readFile("migrations/0005_release_safety.sql", "utf8"));
   const project = await createProject(owner, {
     name: "Fixture",
     language: "english",

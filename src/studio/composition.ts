@@ -1,9 +1,12 @@
-import { mkdtemp, writeFile, readFile, rm } from "node:fs/promises";
+import { mkdtemp, writeFile, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { readAsset, registerAsset } from "./assets";
+import { mediaMetadata } from "./media";
+import { MAX_ASSET_BYTES } from "./object-store";
+import { probeVideo } from "./video-provider";
 import {
   StudioError,
   type StudioProject,
@@ -49,6 +52,14 @@ export async function composeOwnedSegments(
 ) {
   if (!ids.length || new Set(ids).size !== ids.length)
     throw new StudioError("SEGMENTS", "Select unique completed segments");
+  const selected = ids.map((id) => {
+    const source=project.segments.find(segment=>segment.id===id);
+    if (!source) throw new StudioError("SEGMENTS","Selected segment is not completed");
+    return source;
+  });
+  const metadata=await Promise.all(selected.map(source=>mediaMetadata(owner,source.assetId)));
+  if (metadata.some(asset=>asset.mime!=="video/mp4") || metadata.reduce((size,asset)=>size+asset.size,0)>80_000_000)
+    throw new StudioError("ASSET_LIMIT","Composition inputs must be MP4 and total no more than 80 MB",413);
   const workspace = await mkdtemp(path.join(tmpdir(), "vidio-compose-"));
   try {
     for (const id of ids) {
@@ -81,9 +92,6 @@ export async function composeOwnedSegments(
       "concat.txt",
     ];
     let inputIndex = 1;
-    const selected = ids.map(
-      (id) => project.segments.find((segment) => segment.id === id)!,
-    );
     let captions: ReturnType<typeof subtitleFiles> | undefined;
     if (options?.subtitles) {
       captions = subtitleFiles(selected);
@@ -145,6 +153,8 @@ export async function composeOwnedSegments(
       "copy",
       "-movflags",
       "+faststart",
+      "-fs",
+      String(MAX_ASSET_BYTES),
       "final.mp4",
     );
     await run("ffmpeg", args, {
@@ -154,11 +164,16 @@ export async function composeOwnedSegments(
       maxBuffer: 100_000,
     });
     await checkpoint(90);
+    const output=path.join(workspace,"final.mp4");
+    if ((await stat(output)).size>MAX_ASSET_BYTES) throw new StudioError("ASSET_LIMIT","Composed video exceeds 100 MB",413);
+    const duration=await probeVideo(output,project.ratio,signal,120);
+    if (Math.abs(duration-selected.reduce((total,segment)=>total+segment.duration,0))>0.25)
+      throw new StudioError("COMPOSITION","Composed video did not preserve the complete scene timeline");
     project.finalAssetId = await registerAsset(
       owner,
       project.id,
       "video/mp4",
-      await readFile(path.join(workspace, "final.mp4")),
+      await readFile(output),
     );
     if (captions)
       project.captionAssetId = await registerAsset(

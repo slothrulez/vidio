@@ -2,6 +2,13 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { SignJWT } from "jose";
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { StudioError } from "../src/studio/types";
+import { byteRange } from "../src/studio/media";
+import { proxy } from "../src/proxy";
+import { NextRequest } from "next/server";
 import { actor, previewSession } from "../src/studio/auth";
 import {
   mediaToken,
@@ -115,22 +122,61 @@ test("media stages require confirmation, scripts, and owned unique segment selec
     }),
   );
 });
-test("image validation checks signatures, dimensions and bounded size", () => {
-  const png = Buffer.alloc(24);
-  Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).copy(png);
-  png.write("IHDR", 12);
-  png.writeUInt32BE(100, 16);
-  png.writeUInt32BE(100, 20);
-  validateImage(png, "image/png");
-  assert.throws(() =>
+test("image validation fully decodes real images and rejects truncated headers, spoofing and size limits", async () => {
+  const png = await readFile("src/app/opengraph-image.png");
+  await validateImage(png, "image/png");
+  await assert.rejects(() => validateImage(png.subarray(0,24),"image/png"));
+  await assert.rejects(() => validateImage(png.subarray(0,png.length/2),"image/png"));
+  await assert.rejects(() => validateImage(png,"image/jpeg"));
+  await assert.rejects(() =>
     validateImage(
       Buffer.from("<svg><script>alert(1)</script></svg>"),
       "image/png",
     ),
   );
   png.writeUInt32BE(5000, 16);
-  assert.throws(() => validateImage(png, "image/png"));
-  assert.throws(() => validateImage(Buffer.alloc(5_000_001), "image/png"));
+  await assert.rejects(() => validateImage(png, "image/png"));
+  await assert.rejects(() => validateImage(Buffer.alloc(5_000_001), "image/png"));
+});
+test("media range parsing bounds integers, supports suffixes and rejects invalid or multiple ranges",()=>{
+  assert.deepEqual(byteRange(null,20),{start:0,end:19});
+  assert.deepEqual(byteRange("bytes=0-0",20),{start:0,end:0});
+  assert.deepEqual(byteRange("bytes=-7",20),{start:13,end:19});
+  assert.deepEqual(byteRange("bytes=10-",20),{start:10,end:19});
+  assert.deepEqual(byteRange("bytes=10-100",20),{start:10,end:19});
+  for (const value of ["bytes=-0","bytes=-","bytes=20-","bytes=9-4","bytes=0-1,2-3","bytes=999999999999999999999-"]) assert.equal(byteRange(value,20),undefined);
+});
+test("real JPEGs decode, truncated JPEGs fail, and image decoder admission is bounded and released",async()=>{
+  const {stdout:jpeg}=await promisify(execFile)("ffmpeg",["-hide_banner","-loglevel","error","-i","src/app/opengraph-image.png","-frames:v","1","-f","image2pipe","-vcodec","mjpeg","pipe:1"],{encoding:"buffer",timeout:5000,maxBuffer:5_000_000});
+  await validateImage(jpeg,"image/jpeg");
+  await assert.rejects(()=>validateImage(jpeg.subarray(0,jpeg.length/2),"image/jpeg"));
+  const results=await Promise.allSettled([validateImage(jpeg,"image/jpeg"),validateImage(jpeg,"image/jpeg"),validateImage(jpeg,"image/jpeg")]);
+  assert.equal(results.filter(result=>result.status==="fulfilled").length,2);
+  const rejected=results.find(result=>result.status==="rejected")!;
+  assert.equal(rejected.status,"rejected");
+  if (rejected.status==="rejected") {assert.ok(rejected.reason instanceof StudioError);assert.equal(rejected.reason.code,"RATE_LIMIT");}
+  await validateImage(jpeg,"image/jpeg");
+});
+test("production and unknown modes never expose legacy APIs; private development website contracts remain",()=>{
+  const prior={VIDIO_MODE:process.env.VIDIO_MODE,NODE_ENV:process.env.NODE_ENV,COZE_PROJECT_ENV:process.env.COZE_PROJECT_ENV};
+  try {
+    const env=process.env as Record<string,string|undefined>;
+    for (const mode of [undefined,"production","prodution","legacy","demo"]) {
+      if (mode===undefined) delete env.VIDIO_MODE; else env.VIDIO_MODE=mode;
+      env.NODE_ENV="production";
+      assert.equal(proxy(new NextRequest("https://vidio.example/api/generate-video")).status,503);
+      assert.equal(proxy(new NextRequest("https://vidio.example/api/studio/jobs")).status,200);
+      assert.equal(proxy(new NextRequest("https://vidio.example/api/media/any")).status,200);
+      assert.equal(proxy(new NextRequest("https://vidio.example/")).status,200);
+    }
+    env.NODE_ENV="development";delete env.COZE_PROJECT_ENV;
+    for (const mode of [undefined,"legacy"]) {
+      if (mode===undefined) delete env.VIDIO_MODE;else env.VIDIO_MODE=mode;
+      assert.equal(proxy(new NextRequest("http://localhost:5000/api/generate-video")).status,200);
+    }
+    env.VIDIO_MODE="prodution";
+    assert.equal(proxy(new NextRequest("http://localhost:5000/api/file")).status,503);
+  } finally {for (const [key,value] of Object.entries(prior)) {if (value===undefined) delete process.env[key];else process.env[key]=value;}}
 });
 test("streaming body limits apply even without a Content-Length header", async () => {
   const request = new Request("https://vidio.example.com", {

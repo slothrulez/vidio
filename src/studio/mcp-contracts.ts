@@ -2,6 +2,7 @@ import { z } from "zod";
 import { schemas, executeTool, type ToolName } from "./service";
 import { compositionOptionsSchema, operations, StudioError } from "./types";
 import { getProject, getJob } from "./store";
+import { database } from "./db";
 
 const modelJob = z.object({
   projectId: z.uuid(),
@@ -48,10 +49,14 @@ export async function executeMcpTool(owner: string, name: McpToolName, args: unk
   const target: ToolName = name in aliases
     ? aliases[name as keyof typeof aliases]
     : name as ToolName;
-  if (operations.some((operation) => operation === target) && "projectId" in input && typeof input.projectId === "string")
+  if ((operations.some((operation) => operation === target) || ["save_scripts", "update_script", "begin_image_upload"].includes(target)) && "projectId" in input && typeof input.projectId === "string")
     await requireEnglishProject(owner, input.projectId);
-  if (target === "retry_job" && "jobId" in input)
+  if (["retry_job", "cancel_job"].includes(target) && "jobId" in input && typeof input.jobId === "string")
     await requireEnglishProject(owner, (await getJob(owner, input.jobId)).projectId);
+  if ("uploadId" in input && typeof input.uploadId === "string") {
+    const upload = await database().query("SELECT project_id FROM vidio_image_uploads WHERE id=$1 AND owner_id=$2", [input.uploadId, owner]);
+    if (upload.rows.length) await requireEnglishProject(owner, upload.rows[0].project_id);
+  }
   const result = await executeTool(owner, target, input);
   const job = result.structuredContent.job;
   if (job && name in aliases && name !== "get_final_video") {

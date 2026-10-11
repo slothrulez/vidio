@@ -16,6 +16,8 @@ export async function transaction<T>(work: (client: PoolClient) => Promise<T>) {
   const client = await database().connect();
   try {
     await client.query("BEGIN");
+    await client.query("SET LOCAL lock_timeout='5s'");
+    await client.query("SET LOCAL idle_in_transaction_session_timeout='60s'");
     const result = await work(client);
     await client.query("COMMIT");
     return result;

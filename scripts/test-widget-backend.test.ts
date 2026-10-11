@@ -11,6 +11,7 @@ import { createProject, getProject, saveProject } from "../src/studio/store";
 import { executeDemo } from "../src/studio/demo";
 import { composeOwnedSegments, subtitleFiles } from "../src/studio/composition";
 import { readAsset, assetPath } from "../src/studio/assets";
+import { executeTool } from "../src/studio/service";
 import { toolOutputSchema, toolMetaSchema } from "../src/studio/types";
 const url = process.env.TEST_DATABASE_URL;
 if (!url || !new URL(url).pathname.endsWith("_test"))
@@ -29,6 +30,7 @@ before(async () => {
     "0002_job_lifecycle.sql",
     "0003_result_ownership.sql",
     "0004_widget_uploads.sql",
+    "0005_release_safety.sql",
   ])
     await database().query(await readFile(`migrations/${name}`, "utf8"));
   token = await issueLocalMcpToken(subject);
@@ -164,6 +166,19 @@ test("MCP generation is English-only while historical website projects remain un
   for (const name of ["identify_product", "generate_scripts", "start_video_job"])
     assert.equal(toolOutputSchema.parse((await call(name, input)).structuredContent).error?.code, "LANGUAGE");
   assert.equal(toolOutputSchema.parse((await call("compose_final_video", { ...input, segmentIds: [1] })).structuredContent).error?.code, "LANGUAGE");
+  for (const [name,args] of [
+    ["save_scripts",{projectId:legacy.id,revision:0,scripts:[{id:1,script:"Not saved",prompt:"Not saved"}]}],
+    ["update_script",{projectId:legacy.id,revision:0,id:1,script:"Not saved",prompt:"Not saved"}],
+    ["begin_image_upload",{projectId:legacy.id,revision:0,mime:"image/png",size:24}],
+  ] as const) assert.equal(toolOutputSchema.parse((await call(name,args)).structuredContent).error?.code,"LANGUAGE");
+  const pending=await executeTool(owner,"begin_image_upload",{projectId:legacy.id,revision:0,mime:"image/png",size:24});
+  const uploadId=pending._meta!.upload!.id;
+  for (const [name,args] of [
+    ["append_image_chunk",{uploadId,offset:0,data:Buffer.alloc(24).toString("base64")}],
+    ["finish_image_upload",{uploadId}],
+    ["abort_image_upload",{uploadId}],
+  ] as const) assert.equal(toolOutputSchema.parse((await call(name,args)).structuredContent).error?.code,"LANGUAGE");
+  assert.equal(Number((await database().query("SELECT octet_length(data) AS n FROM vidio_image_uploads WHERE id=$1",[uploadId])).rows[0].n),0);
   const unchanged = await getProject(owner, legacy.id);
   assert.equal(unchanged.language, "mandarin");
   assert.equal(unchanged.revision, legacy.revision);

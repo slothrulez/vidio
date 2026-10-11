@@ -20,6 +20,7 @@ import {
 import { studioMode } from "./config";
 import { uploadSchemas, executeUpload, type UploadTool } from "./uploads";
 import { retryJob } from "./lifecycle";
+import { database } from "./db";
 
 export const schemas = {
   ...uploadSchemas,
@@ -114,6 +115,10 @@ export async function executeTool(
     project=await replaceScripts(owner,input.projectId,input.revision,input.scripts);
   } else if (name === "update_script")
     project = await updateScript(owner, schemas.update_script.parse(args));
+  if (project && !job && ["get_project", "render_project"].includes(name)) {
+    const latest=await database().query("SELECT id FROM vidio_jobs WHERE project_id=$1 AND owner_id=$2 ORDER BY created_at DESC,id DESC LIMIT 1",[project.id,owner]);
+    if (latest.rows.length) job=await getJob(owner,latest.rows[0].id);
+  }
   return {
     structuredContent: { mode, project, job, projects, message },
     _meta: { ...(project ? { media: await projectMedia(owner, project),mediaExpiresAt:new Date(Date.now()+600_000).toISOString() } : {}), ...(upload ? {upload} : {}) },
