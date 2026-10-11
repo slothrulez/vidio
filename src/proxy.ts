@@ -11,7 +11,8 @@ export function proxy(request: NextRequest) {
     isolated &&
     pathname.startsWith("/api/") &&
     !pathname.startsWith("/api/studio/") &&
-    !pathname.startsWith("/api/media/")
+    !pathname.startsWith("/api/media/") &&
+    !pathname.startsWith("/api/health/")
   ) {
     return NextResponse.json(
       {

@@ -38,8 +38,11 @@ Start two processes in separate terminals (the worker must have access to the sa
 
 ```bash
 pnpm worker
-COZE_PROJECT_ENV=PROD pnpm start
+NODE_ENV=production pnpm start
 ```
+
+The custom server also treats `COZE_PROJECT_ENV=PROD` as production. The start script
+honors the hosting platform's `PORT` (default `5000`).
 
 Open `http://localhost:5000/studio`. To run the protocol test, use `pnpm test:mcp` with both processes running. For the isolated database test, create a disposable `vidio_test` database and run `TEST_DATABASE_URL=postgresql://vidio:vidio_local@127.0.0.1:54329/vidio_test pnpm test:integration`. Unit tests require no database: `pnpm test:unit`. Both databases live in the Docker volume; `docker compose down` stops the container but does not delete the volume. Never point the disposable integration test at user data.
 
@@ -141,6 +144,45 @@ function. Production assets are shared through S3, so web/worker disks need not 
 shared. Migration `0003` adds owned final-result checkpoints and compound asset
 ownership constraints. Pool size scales with bounded worker concurrency so uploads
 cannot starve lease heartbeats; size deployment replicas to database capacity.
+
+#### Staging deployment and recovery
+
+The repository does not select a hosting provider. Use a host that can run a long-lived
+Node.js web process and a separate long-lived worker, plus managed PostgreSQL and private
+S3-compatible storage. Terminate TLS at the HTTPS edge and set `VIDIO_PUBLIC_ORIGIN` to
+that canonical HTTPS origin. Run the web process with `NODE_ENV=production`,
+`VIDIO_MODE=production`, and the platform-provided `PORT`; run `pnpm worker` separately
+with the same database, OAuth, storage and provider configuration. The worker needs
+FFmpeg/FFprobe. Do not place provider or signing keys in `NEXT_PUBLIC_*` variables or
+client bundles; provision server-side values through the platform's secret manager. Keep
+`VIDIO_MCP_LOCAL_AUTH` unset.
+
+Before the first release, take a database backup or confirm point-in-time recovery, then
+run `pnpm db:migrate` once using the release artifact and a migration-capable DB role.
+Migration `0008_worker_health.sql` adds the heartbeat table. The readiness check remains
+503 until PostgreSQL and a matching-mode worker heartbeat are healthy. The probes are
+`GET /api/health/live` (process is serving) and `GET /api/health/ready` (database responds
+and a worker heartbeat is no older than 30 seconds). They return only generic status JSON
+and are unauthenticated for platform probes. Alert on repeated readiness failures and
+worker restarts.
+
+The app enforces 240 managed API requests per owner per minute, worker concurrency and
+attempt limits, and a daily paid-segment admission quota. Keep paid generation disabled
+until credentials, provider host allowlists, and a low staging quota are configured. Add
+an edge-level request limit for public ingress when selecting the host; the application
+cannot configure a provider-neutral edge/WAF policy.
+
+Release sequence: build the artifact, back up/confirm PITR, run migrations, start the
+worker, start the web process, and verify both health endpoints plus an authenticated
+non-paid demo/mock job before enabling a bounded paid test. For rollback, first disable
+paid admissions (`VIDIO_PAID_GENERATION_ENABLED=false`), gracefully stop the worker, then
+roll web and worker back together to the prior artifact and verify readiness. Migration
+0008 is additive and can remain applied while reverting the app; do not drop it as part
+of an application rollback. Migrations are forward-only in the current runner. Restore a
+database snapshot/PITR only for a separate data-recovery event after stopping both
+processes; that can discard jobs and assets registered after the recovery point. Retain
+the same `VIDIO_MEDIA_SECRET` during rollback so existing media capabilities remain
+verifiable.
 
 All `/api/studio/*` production routes require a scoped OAuth bearer token. Create a
 project using the existing `create_project` tool. Upload an owned image via

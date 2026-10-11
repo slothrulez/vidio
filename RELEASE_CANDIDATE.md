@@ -1,7 +1,8 @@
 # vidio release candidate checklist
 
-Branch `feature/mcp-integration`. Status: **internal release candidate — NO-GO for public
-deployment** until the launch gates below are closed. Nothing was published or deployed.
+Branch `codex/release-hardening`. Status: **staging not deployed**. No hosting project,
+staging domain, database, private bucket or staging secret set is configured in this
+workspace. Nothing was published or deployed.
 
 ## Verification run on this candidate
 
@@ -128,3 +129,51 @@ git diff --check
 - Request and media limits are per owner; add edge rate limiting and WAF for anonymous traffic.
 - Risks: single-region PostgreSQL/pg-boss as a hard dependency; FFmpeg CPU on the worker; media
   egress from capability URLs (10-minute expiry limits sharing); no budget alerting yet.
+
+## Staging readiness audit (2026-10-11)
+
+The baseline inspected for this handoff was `02a6ffbaaac9444f4a3dc4cf62b267d390a49025`.
+This workspace contains only a local PostgreSQL Compose service; it has no staging
+deployment manifest, linked Vercel project, or configured staging credentials. The
+authenticated Vercel account had no `vidio` project, so no unrelated project was used.
+The Docker CLI is installed but its daemon is unavailable. No staging deployment or
+paid provider request was attempted.
+
+Confirmed and fixed before any staging rollout:
+
+- The custom server selected Next development mode unless `COZE_PROJECT_ENV=PROD`, even
+  with `NODE_ENV=production`. It now recognizes either production marker.
+- The start script discarded a platform-provided `PORT`; it now honors it.
+- Added generic liveness and readiness endpoints. Readiness requires PostgreSQL and a
+  fresh PostgreSQL worker heartbeat for the configured mode. Migration 0008 creates the
+  heartbeat table.
+
+Still blocking staging acceptance: select/provision the hosting target and HTTPS domain,
+managed PostgreSQL, private S3 bucket/role, OAuth issuer/JWKS/audience, and server-side
+Ark credentials/endpoint allowlist. The managed production path also has no live product
+recognition, script-generation or English TTS adapter; these functions fail explicitly.
+The managed product is English-only. Official ChatGPT developer-connector acceptance and
+a controlled paid generation require the deployed HTTPS endpoint, connected OAuth, and
+real provider credentials. Do not claim staging acceptance until those checks are run.
+
+Checks run for this hardening change (Node 24.17.0; invoked installed package binaries
+directly because the Corepack cache could not be written in this environment):
+
+| Check | Result |
+|---|---|
+| TypeScript (`tsc -p tsconfig.json`) | passed |
+| ESLint (`eslint . --quiet`) | passed |
+| Unit suite, including new startup/readiness regressions | 33 passed |
+| Embedded UI suite | 10 passed |
+| Branding suite | 9 passed |
+| Widget bundle | passed |
+| Next.js production build | passed; health routes included |
+| Custom Node server bundle | passed |
+| Local production-mode HTTP health smoke | liveness 200; readiness 503 without DB/worker, generic body |
+| PostgreSQL/pg-boss integration and live worker startup | blocked: Docker daemon and database are unavailable |
+| ChatGPT developer connector and end-to-end media workflow | blocked: no HTTPS staging endpoint, OAuth setup, bucket, or provider credentials |
+| Paid generation cost | $0; no paid operation was attempted |
+
+The OpenAI developer flow requires a reachable HTTPS `/mcp` endpoint (or its secure
+development tunnel) before adding the custom MCP server and exercising its tools. This
+endpoint was unavailable here, so there is no ChatGPT host acceptance result.

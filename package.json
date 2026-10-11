@@ -13,7 +13,7 @@
     "ts-check": "tsc -p tsconfig.json",
     "validate": "pnpm run ts-check && pnpm run lint:build",
     "test:branding": "node --test scripts/test-branding.mjs",
-    "test:unit": "tsx --test scripts/test-contracts.test.ts scripts/test-redaction.test.ts scripts/test-studio.test.ts scripts/test-mcp-auth.test.ts scripts/test-video-provider.test.ts",
+    "test:unit": "tsx --test scripts/test-contracts.test.ts scripts/test-redaction.test.ts scripts/test-studio.test.ts scripts/test-mcp-auth.test.ts scripts/test-video-provider.test.ts scripts/test-health.test.ts",
     "test:ui": "tsx --test scripts/test-ui.test.tsx",
     "test:integration": "tsx --test --test-concurrency=1 scripts/test-persistence.test.ts scripts/test-lifecycle.test.ts scripts/test-production.test.ts scripts/test-widget-backend.test.ts",
     "test:mcp": "tsx scripts/test-mcp.ts",

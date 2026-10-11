@@ -46,7 +46,7 @@ let putProbe:(()=>Promise<void>)|undefined;
 const objects=new Map<string,{buffer:Buffer;mime:string}>();
 let privateBucket=true;
 before(async()=>{
-  for (const name of ["0001_studio.sql","0002_job_lifecycle.sql","0003_result_ownership.sql","0004_widget_uploads.sql","0005_release_safety.sql","0006_cost_consent.sql"]) await database().query(await readFile(`migrations/${name}`,"utf8"));
+  for (const name of ["0001_studio.sql","0002_job_lifecycle.sql","0003_result_ownership.sql","0004_widget_uploads.sql","0005_release_safety.sql","0006_cost_consent.sql","0007_english_only.sql","0008_worker_health.sql"]) await database().query(await readFile(`migrations/${name}`,"utf8"));
   const {publicKey,privateKey}=await generateKeyPair("RS256");
   clip=await videoFixture();
   const jwk={...await exportJWK(publicKey),kid:"test-key",alg:"RS256",use:"sig"};

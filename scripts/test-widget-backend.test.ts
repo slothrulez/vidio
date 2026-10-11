@@ -31,6 +31,8 @@ before(async () => {
     "0004_widget_uploads.sql",
     "0005_release_safety.sql",
     "0006_cost_consent.sql",
+    "0007_english_only.sql",
+    "0008_worker_health.sql",
   ])
     await database().query(await readFile(`migrations/${name}`, "utf8"));
   token = await issueLocalMcpToken(subject);

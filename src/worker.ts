@@ -1,4 +1,5 @@
 import { config } from "dotenv";
+import { randomUUID } from "node:crypto";
 import { PgBoss } from "pg-boss";
 import { database } from "./studio/db";
 import { getProject } from "./studio/store";
@@ -10,6 +11,7 @@ import { composedAsset,composedCaption,persistComposition } from "./studio/lifec
 import { claimJob, heartbeat, completeJob, failJob, recoverJobs, completedSegment, persistSegment, type ClaimedJob } from "./studio/lifecycle";
 import { StudioError, type StudioProject } from "./studio/types";
 import { cleanupAssets } from "./studio/assets";
+import { removeWorkerHeartbeat, pruneStaleWorkerHeartbeats, writeWorkerHeartbeat, WORKER_HEARTBEAT_INTERVAL_MS } from "./studio/health";
 
 config({ path: ".env.local", quiet: true });
 export const queueName = "vidio-preview";
@@ -80,6 +82,23 @@ export async function startWorker(execute: JobExecutor = managedExecutor) {
   await boss.work<{jobId: string}>(queue, { batchSize: 1, localConcurrency: limits.concurrency, pollingIntervalSeconds: 1 }, async (jobs) => {
     for (const task of jobs) await runJob(task.data.jobId,execute);
   });
+  const workerId = randomUUID();
+  try {
+    await pruneStaleWorkerHeartbeats();
+    await writeWorkerHeartbeat(workerId, mode);
+  } catch (error) {
+    await boss.stop({ graceful: true, timeout: 50000 });
+    throw error;
+  }
+  let heartbeatInFlight = false;
+  const healthTimer = setInterval(() => {
+    if (heartbeatInFlight) return;
+    heartbeatInFlight = true;
+    void writeWorkerHeartbeat(workerId, mode)
+      .catch(() => console.error("Worker health heartbeat failed; readiness will expire."))
+      .finally(() => { heartbeatInFlight = false; });
+  }, WORKER_HEARTBEAT_INTERVAL_MS);
+  healthTimer.unref();
   let dispatching = false;
   let cleanedAt = 0;
   async function dispatch() {
@@ -106,6 +125,12 @@ export async function startWorker(execute: JobExecutor = managedExecutor) {
   console.log(`vidio durable worker ready (${mode})`);
   return async () => {
     clearInterval(timer);
+    clearInterval(healthTimer);
+    try {
+      await removeWorkerHeartbeat(workerId);
+    } catch {
+      console.error("Worker health record cleanup deferred until expiry.");
+    }
     await boss.stop({graceful: true, timeout: 50000});
   };
 }

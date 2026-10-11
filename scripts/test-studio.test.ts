@@ -167,6 +167,7 @@ test("production and unknown modes never expose legacy APIs; private development
       assert.equal(proxy(new NextRequest("https://vidio.example/api/generate-video")).status,503);
       assert.equal(proxy(new NextRequest("https://vidio.example/api/studio/jobs")).status,200);
       assert.equal(proxy(new NextRequest("https://vidio.example/api/media/any")).status,200);
+      assert.equal(proxy(new NextRequest("https://vidio.example/api/health/live")).status,200);
       assert.equal(proxy(new NextRequest("https://vidio.example/")).status,200);
     }
     env.NODE_ENV="development";delete env.COZE_PROJECT_ENV;

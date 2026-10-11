@@ -3,8 +3,9 @@ set -Eeuo pipefail
 
 COZE_WORKSPACE_PATH="${COZE_WORKSPACE_PATH:-$(pwd)}"
 
-PORT=5000
+PORT="${PORT:-5000}"
 DEPLOY_RUN_PORT="${DEPLOY_RUN_PORT:-$PORT}"
+export NODE_ENV="${NODE_ENV:-production}"
 
 
 start_service() {

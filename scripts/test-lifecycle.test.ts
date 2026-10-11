@@ -25,6 +25,8 @@ before(async()=>{
   await database().query(await readFile("migrations/0004_widget_uploads.sql","utf8"));
   await database().query(await readFile("migrations/0005_release_safety.sql","utf8"));
   await database().query(await readFile("migrations/0006_cost_consent.sql","utf8"));
+  await database().query(await readFile("migrations/0007_english_only.sql","utf8"));
+  await database().query(await readFile("migrations/0008_worker_health.sql","utf8"));
 });
 after(async()=>{
   await database().query("DELETE FROM vidio_projects WHERE owner_id=$1",[owner]);
