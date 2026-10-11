@@ -4,6 +4,7 @@ import axios from "axios";
 import { parseRegenerationResult } from "../src/agent/transport";
 import { regenerateSegment } from "../src/agent/tools";
 import { VideoAgentExecutor } from "../src/agent/graph";
+import { callVideoGenerationOnce } from "../src/agent/nodes/generate-segments";
 
 const done = `data: ${JSON.stringify({ type: "done", data: { video: { url: "https://example.com/video.mp4", localPath: "/tmp/owned/video.mp4", duration: 5 }, audio: { url: "https://example.com/audio.mp3", localPath: "/tmp/owned/audio.mp3" } } })}\n\n`;
 
@@ -39,6 +40,18 @@ test("stream errors and premature termination are not successes", () => {
     () => parseRegenerationResult('data: {"type":"start"}\n', 1, ""),
     /without a completed/,
   );
+});
+
+test("ambiguous legacy video submission failures are never retried", async () => {
+  let attempts = 0;
+  await assert.rejects(
+    () => callVideoGenerationOnce(async () => {
+      attempts++;
+      throw new Error("provider response timed out after submission");
+    }),
+    /timed out after submission/,
+  );
+  assert.equal(attempts, 1);
 });
 
 test("regeneration helper sends the route imageUrl field and reads SSE", async () => {

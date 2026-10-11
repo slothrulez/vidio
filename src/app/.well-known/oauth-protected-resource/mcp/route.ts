@@ -1,19 +1,25 @@
-import { publicOrigin } from "@/studio/config";
+import { publicOrigin, studioMode } from "@/studio/config";
+import { mcpScope } from "@/studio/mcp-auth";
+import { safeError } from "@/studio/service";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export function GET() {
-  const issuer = process.env.OAUTH_ISSUER;
-  if (!issuer || !process.env.OAUTH_JWKS_URL || !process.env.OAUTH_AUDIENCE || process.env.VIDIO_MCP_LOCAL_AUTH === "true")
+  try {
+    if (studioMode() !== "production")
+      return new Response(null, { status: 404 });
+
     return Response.json(
       {
-        error:
-          "OAuth is not configured. Local bearer testing does not implement the ChatGPT OAuth flow.",
+        resource: `${publicOrigin()}/mcp`,
+        authorization_servers: [process.env.OAUTH_ISSUER!],
+        scopes_supported: [mcpScope],
       },
-      { status: 503 },
+      { headers: { "Cache-Control": "public, max-age=300" } },
     );
-  return Response.json({
-    resource: `${publicOrigin()}/mcp`,
-    authorization_servers: [issuer],
-    scopes_supported: ["vidio:studio"],
-    bearer_methods_supported: ["header"],
-  });
+  } catch (error) {
+    const failure = safeError(error);
+    return Response.json(failure.body, { status: failure.status });
+  }
 }

@@ -1,6 +1,6 @@
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/server";
 import { mcpActor, mcpChallenge } from "@/studio/mcp-auth";
-import { createMcpServer } from "@/studio/mcp";
+import { addMcpToolAuthMetadata, createMcpServer } from "@/studio/mcp";
 import { checkOrigin, publicOrigin, studioMode } from "@/studio/config";
 import { StudioError } from "@/studio/types";
 import { safeError } from "@/studio/service";
@@ -35,7 +35,8 @@ export async function POST(request: Request) {
     });
     await server.connect(transport);
     try {
-      return await transport.handleRequest(request, { parsedBody: body });
+      const response = await transport.handleRequest(request, { parsedBody: body });
+      return await addMcpToolAuthMetadata(response, body);
     } finally {
       await server.close();
     }

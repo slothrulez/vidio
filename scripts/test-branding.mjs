@@ -30,7 +30,7 @@ test('package and documentation identify vidio without changing package manageme
 
 test('page metadata and social previews use vidio, not template attribution', () => {
   const source = read('src/app/layout.tsx');
-  const literal = source.match(/export const metadata: Metadata = ([\s\S]*?);\n/);
+  const literal = source.match(/export const metadata: Metadata = (\{[\s\S]*?\n\});/);
   assert.ok(literal);
   const metadata = runInNewContext(`(${literal[1]})`, {
     URL,
@@ -56,7 +56,7 @@ test('page metadata and social previews use vidio, not template attribution', ()
 test('social-image origins reuse the existing project domain setting', () => {
   const source = read('src/app/layout.tsx');
   assert.match(source, /process\.env\.COZE_PROJECT_DOMAIN_DEFAULT \|\| 'http:\/\/localhost:5000'/);
-  const literal = source.match(/export const metadata: Metadata = ([\s\S]*?);\n/);
+  const literal = source.match(/export const metadata: Metadata = (\{[\s\S]*?\n\});/);
   assert.ok(literal);
   for (const [projectDomain, origin] of [
     ['http://localhost:5000', 'http://localhost:5000'],

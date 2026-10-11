@@ -13,6 +13,33 @@ import { toolOutputSchema,StudioError } from "./types";
 import { publicOrigin,studioMode } from "./config";
 
 export const widgetUri = "ui://vidio/studio-v2.html";
+const oauthSecuritySchemes = [{ type: "oauth2" as const, scopes: [mcpScope] }];
+export async function addMcpToolAuthMetadata(response: Response, requestBody: unknown) {
+  if (!requestBody || typeof requestBody !== "object" || (requestBody as { method?: unknown }).method !== "tools/list")
+    return response;
+  if (!response.headers.get("content-type")?.includes("application/json")) return response;
+  let payload: unknown;
+  try {
+    payload = await response.clone().json();
+  } catch {
+    return response;
+  }
+  if (!payload || typeof payload !== "object" || !Array.isArray((payload as { result?: { tools?: unknown } }).result?.tools))
+    return response;
+  const result = payload as { result: { tools: Array<Record<string, unknown>> }; [key: string]: unknown };
+  result.result.tools = result.result.tools.map((tool) => ({
+    ...tool,
+    securitySchemes: oauthSecuritySchemes,
+  }));
+  const headers = new Headers(response.headers);
+  headers.delete("content-length");
+  headers.delete("content-encoding");
+  return new Response(JSON.stringify(result), {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
 const titles: Record<McpToolName, string> = {
   abort_image_upload: "Cancel an unfinished private image upload",
   retry_job: "Retry an existing video job safely",
@@ -49,7 +76,7 @@ export function createMcpServer(owner: string) {
   for (const name of Object.keys(mcpSchemas) as McpToolName[]) {
     const appOnly=["begin_image_upload","append_image_chunk","finish_image_upload","abort_image_upload","save_scripts","grant_cost_consent"].includes(name);
     const metadata: Record<string, unknown> = {
-      securitySchemes: [{ type: "oauth2", scopes: [mcpScope] }],
+      securitySchemes: oauthSecuritySchemes,
     };
     if (!appOnly) {
       metadata.ui = { resourceUri: widgetUri };

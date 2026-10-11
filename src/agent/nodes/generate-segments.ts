@@ -21,6 +21,10 @@ const VIDEO_MODEL_EP = process.env.VIDEO_MODEL_EP || "ep-20260514120705-pqv86";
 const ARK_API_KEY = process.env.ARK_API_KEY;
 const ARK_BASE_URL = process.env.ARK_BASE_URL || "https://ark.cn-beijing.volces.com";
 
+export function callVideoGenerationOnce<T>(submit: () => Promise<T>): Promise<T> {
+  return submit();
+}
+
 /**
  * Download a file
  */
@@ -59,26 +63,6 @@ async function getAudioDuration(audioPath: string): Promise<number> {
   } catch {
     return 5;
   }
-}
-
-/**
- * Retry helper
- */
-async function withRetry<T>(
-  fn: () => Promise<T>,
-  maxRetries: number = 3,
-  delay: number = 2000
-): Promise<T> {
-  for (let i = 0; i < maxRetries; i++) {
-    try {
-      return await fn();
-    } catch (error) {
-      if (i === maxRetries - 1) throw error;
-      console.log(`[Agent] retry ${i + 1}/${maxRetries}...`);
-      await new Promise(resolve => setTimeout(resolve, delay * (i + 1)));
-    }
-  }
-  throw new Error("Retries exhausted");
 }
 
 /**
@@ -176,7 +160,8 @@ async function generateSegment(
     
     const videoDuration = Math.max(5, audioDuration);
     
-    // Generate the video with retries
+    // A timeout or connection error can happen after the provider accepted work.
+    // This legacy path has no durable provider task checkpoint, so do not resubmit.
     const generateVideo = async () => {
       console.log(`[Agent] segment ${index + 1}: video parameters`, {
         model: VIDEO_MODEL_EP,
@@ -204,7 +189,7 @@ async function generateSegment(
       }
     };
     
-    const videoResult = await withRetry(generateVideo, 3, 2000);
+    const videoResult = await callVideoGenerationOnce(generateVideo);
     
     if (!videoResult.videoUrl) {
       throw new Error("Video generation failed: no video URL returned");
