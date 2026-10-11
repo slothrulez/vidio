@@ -85,9 +85,15 @@ Job tools enqueue asynchronous work and return stable UUIDs; use `create_project
 This is an opt-in managed execution path, not a replacement of the existing
 LangGraph/Coze website. It reuses PostgreSQL, pg-boss, the Ark video task API and
 FFmpeg. Legacy routes and their contracts are unchanged when `VIDIO_MODE` is unset;
-keep that legacy deployment private. In **demo and production managed modes**,
-unsafe legacy SSE/provider/file/proxy routes return 503 so they cannot bypass
-authentication, ownership or budgets. Production browser sign-in is not included.
+keep that legacy deployment private. In **demo and production managed modes**, when
+`NODE_ENV=production`, or when `VIDIO_MODE` is misspelled or unknown, unsafe legacy
+SSE/provider/file/proxy routes return 503 so they cannot bypass authentication,
+ownership or budgets; only an explicit `VIDIO_MODE=legacy` (or an unset mode in
+development) exposes them. Production browser sign-in is not included.
+Release-candidate status, verification commands and launch gates are listed in
+[RELEASE_CANDIDATE.md](RELEASE_CANDIDATE.md). Migration `0005` adds durable per-owner
+request limits (240/minute, HTTP 429) and storage-intent reservations that the worker
+cleans up.
 
 ### Required production configuration
 
