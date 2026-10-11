@@ -8,6 +8,7 @@ import fs from "fs";
 import path from "path";
 import { exec } from "child_process";
 import { promisify } from "util";
+import { safeLogError } from '@/lib/log-redact';
 
 const execAsync = promisify(exec);
 
@@ -118,7 +119,7 @@ export async function composeFinalNode(state: AgentStateType): Promise<Partial<A
       `ffmpeg -y -f concat -safe 0 -i "${concatListPath}" -c copy "${finalVideoPath}"`
     );
     
-    console.log(`[Agent] 最终视频合成完成: ${finalVideoPath}`);
+    console.log(`[Agent] 最终视频合成完成: [path]`);
     
     // 清理临时文件
     fs.unlinkSync(concatListPath);
@@ -134,7 +135,7 @@ export async function composeFinalNode(state: AgentStateType): Promise<Partial<A
       isComplete: true,
     };
   } catch (error) {
-    console.error("[Agent] 视频合成失败:", error);
+    console.error("[Agent] 视频合成失败:", safeLogError(error));
     return {
       errors: [...state.errors, `视频合成失败: ${error}`],
       currentStep: Step.ERROR,

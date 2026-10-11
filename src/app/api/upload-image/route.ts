@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { S3Storage } from 'coze-coding-dev-sdk';
+import { safeLogError } from '@/lib/log-redact';
 
 export async function POST(request: NextRequest) {
   try {
@@ -43,7 +44,7 @@ export async function POST(request: NextRequest) {
       fileKey,
     });
   } catch (error) {
-    console.error('图片上传失败:', error);
+    console.error('图片上传失败:', safeLogError(error));
     return NextResponse.json(
       { error: '图片上传失败，请重试' },
       { status: 500 }

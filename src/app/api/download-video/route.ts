@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { safeLogError } from '@/lib/log-redact';
 
 export async function GET(request: NextRequest) {
   const videoUrl = request.nextUrl.searchParams.get('url');
@@ -36,7 +37,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('下载视频失败:', error);
+    console.error('下载视频失败:', safeLogError(error));
     return NextResponse.json({ 
       error: '下载视频失败' 
     }, { status: 500 });

@@ -6,6 +6,7 @@
 import { AgentStateType } from "../state";
 import fs from "fs";
 import path from "path";
+import {  } from '@/lib/log-redact';
 
 export async function initNode(state: AgentStateType): Promise<Partial<AgentStateType>> {
   console.log("[Agent] 初始化节点开始执行");
@@ -37,7 +38,7 @@ export async function initNode(state: AgentStateType): Promise<Partial<AgentStat
   fs.mkdirSync(audioDir, { recursive: true });
   fs.mkdirSync(videoDir, { recursive: true });
   
-  console.log(`[Agent] 工作目录创建完成: ${folderPath}`);
+  console.log(`[Agent] 工作目录创建完成: [path]`);
   
   // 计算相对路径
   const relativePath = isProd 

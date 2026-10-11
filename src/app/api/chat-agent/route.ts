@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { HeaderUtils } from "coze-coding-dev-sdk";
 import { chatNodeStream } from "@/agent/chat-node";
 import { getDefaultState, ChatAgentState, AgentSSEMessage } from "@/agent/chat-state";
+import { redactUrl, safeLogError } from '@/lib/log-redact';
 
 // 会话存储（简单实现，生产环境应使用数据库）
 const sessions = new Map<string, ChatAgentState>();
@@ -123,7 +124,7 @@ export async function POST(request: NextRequest) {
         
         if (agentMessage.type === 'segment_video') {
           const segContent = agentMessage.content as { segmentId?: number; videoUrl?: string };
-          console.log(`[chat-agent API] segment_video详情: segmentId=${segContent.segmentId}, videoUrl=${segContent.videoUrl?.substring(0, 100)}`);
+          console.log(`[chat-agent API] segment_video详情: segmentId=${segContent.segmentId}, videoUrl=${redactUrl(segContent.videoUrl)}`);
         }
         
         const eventData = JSON.stringify({
@@ -137,7 +138,7 @@ export async function POST(request: NextRequest) {
         try {
           await writer.write(encoder.encode(`data: ${eventData}\n\n`));
         } catch (writeError) {
-          console.error(`[chat-agent API] 写入失败: ${writeError}`);
+          console.error(`[chat-agent API] 写入失败: ${safeLogError(writeError)}`);
         }
         
         // 收集状态更新
@@ -194,7 +195,7 @@ export async function POST(request: NextRequest) {
               console.log(`[API] 更新 state.segments: ${state.segments.length} 个片段`);
               // 详细日志：检查segments是否包含videoUrl
               (toolData.segments as Array<{id?: number; videoUrl?: string}>).forEach((seg, i) => {
-                console.log(`[API] tool_result segment[${i}]: id=${seg.id}, hasVideo=${!!seg.videoUrl}, videoUrl=${seg.videoUrl?.substring(0, 50)}...`);
+                console.log(`[API] tool_result segment[${i}]: id=${seg.id}, hasVideo=${!!seg.videoUrl}, videoUrl=${redactUrl(seg.videoUrl)}`);
               });
               if (state.segments.length > 0 && toolData.currentStage) {
                 state.currentStage = toolData.currentStage as ChatAgentState["currentStage"];
@@ -228,7 +229,7 @@ export async function POST(request: NextRequest) {
               state.segments = stateData.segments;
               // 详细日志：检查segments是否包含videoUrl
               stateData.segments.forEach((seg, i) => {
-                console.log(`[API] wait_feedback segment[${i}]: id=${seg.id}, hasVideo=${!!seg.videoUrl}, videoUrl=${seg.videoUrl?.substring(0, 50)}...`);
+                console.log(`[API] wait_feedback segment[${i}]: id=${seg.id}, hasVideo=${!!seg.videoUrl}, videoUrl=${redactUrl(seg.videoUrl)}`);
               });
             }
             state.productImageUrl = stateData.productImageUrl;
@@ -247,7 +248,7 @@ export async function POST(request: NextRequest) {
       console.log(`[API] 最终state_update: segments=${state.segments?.length || 0}个, stage=${state.currentStage}`);
       if (state.segments && state.segments.length > 0) {
         state.segments.forEach((seg, i) => {
-          console.log(`[API] 最终state_update segment[${i}]: id=${seg.id}, hasVideo=${!!seg.videoUrl}, videoUrl=${seg.videoUrl?.substring(0, 50)}...`);
+          console.log(`[API] 最终state_update segment[${i}]: id=${seg.id}, hasVideo=${!!seg.videoUrl}, videoUrl=${redactUrl(seg.videoUrl)}`);
         });
       }
       
@@ -275,7 +276,7 @@ export async function POST(request: NextRequest) {
         console.log("[Chat Agent API] 用户取消了请求");
       } else {
         // 真正的错误，打印错误日志
-        console.error("[Chat Agent API] 流处理错误:", error);
+        console.error("[Chat Agent API] 流处理错误:", safeLogError(error));
         try {
           await writer.write(encoder.encode(`data: ${JSON.stringify({
             type: "error",

@@ -12,6 +12,7 @@ import { promisify } from "util";
 import { TTSClient, VideoGenerationClient, Config, S3Storage } from "coze-coding-dev-sdk";
 import https from "https";
 import http from "http";
+import { safeLogError } from '@/lib/log-redact';
 
 const execAsync = promisify(exec);
 
@@ -148,7 +149,7 @@ async function generateSegment(
         });
         console.log(`[Agent] 片段 ${index + 1}: 图片上传成功`);
       } catch (uploadError) {
-        console.error(`[Agent] 片段 ${index + 1}: 图片上传失败，使用原始URL`, uploadError);
+        console.error(`[Agent] 片段 ${index + 1}: 图片上传失败，使用原始URL`, safeLogError(uploadError));
       }
     }
     
@@ -240,7 +241,7 @@ async function generateSegment(
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error(`[Agent] 片段 ${index + 1}: 生成失败`, error);
+    console.error(`[Agent] 片段 ${index + 1}: 生成失败`, safeLogError(error));
     
     return {
       id: segment.id,

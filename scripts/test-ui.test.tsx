@@ -49,6 +49,8 @@ function transport(project?: StudioProject) {
   const api: EmbeddedTransport = {
     callTool: async (name, args) => {
       calls.push({ name, args });
+      if (name === "grant_cost_consent")
+        return { structuredContent: { mode: "demo", message: "Approved", consent: { token: randomUUID(), operation: String(args.operation), expiresAt: new Date(Date.now() + 600_000).toISOString() } } };
       return name === "list_projects" ? response() : response(project);
     },
     openLink: async () => {},

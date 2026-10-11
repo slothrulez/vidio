@@ -18,6 +18,7 @@ const consentSchema = z.object({
   projectId: z.uuid(),
   revision: z.number().int().nonnegative(),
   operation: z.enum(consentOperations),
+  idempotencyKey: z.string().min(8).max(100),
 }).strict();
 const statusSchema = z.object({ jobId: z.uuid() }).strict();
 const finalSchema = z.object({ projectId: z.uuid() }).strict();
@@ -65,8 +66,8 @@ async function grantConsent(owner: string, args: unknown): Promise<{ structuredC
     throw new StudioError("RATE_LIMIT", "Too many pending approvals; wait for them to expire", 429);
   const token = randomUUID();
   const row = await database().query(
-    "INSERT INTO vidio_cost_consents(id,owner_id,project_id,revision,operation,expires_at) VALUES($1,$2,$3,$4,$5,now()+interval '10 minutes') RETURNING expires_at",
-    [token, owner, consent.projectId, consent.revision, consent.operation],
+    "INSERT INTO vidio_cost_consents(id,owner_id,project_id,revision,operation,idempotency_key,expires_at) VALUES($1,$2,$3,$4,$5,$6,now()+interval '10 minutes') RETURNING expires_at",
+    [token, owner, consent.projectId, consent.revision, consent.operation, consent.idempotencyKey],
   );
   return {
     structuredContent: {
@@ -83,13 +84,15 @@ async function consumeConsent(
   operation: string,
   input: { projectId: string; revision: number; idempotencyKey?: string },
 ) {
+  if (!input.idempotencyKey)
+    throw new StudioError("CONSENT", "Paid steps require the idempotencyKey that was approved", 409);
   const result = await database().query(
     `UPDATE vidio_cost_consents
-     SET used_at=coalesce(used_at,now()), idempotency_key=coalesce(idempotency_key,$6::text)
+     SET used_at=coalesce(used_at,now())
      WHERE id=$1 AND owner_id=$2 AND project_id=$3 AND revision=$4 AND operation=$5 AND expires_at>now()
-       AND (used_at IS NULL OR ($6::text IS NOT NULL AND idempotency_key=$6::text))
+       AND idempotency_key=$6::text
      RETURNING id`,
-    [token, owner, input.projectId, input.revision, operation, input.idempotencyKey ?? null],
+    [token, owner, input.projectId, input.revision, operation, input.idempotencyKey],
   );
   if (!result.rows.length)
     throw new StudioError("CONSENT", "This approval is invalid, expired or already used; approve again in the vidio studio", 409);
@@ -98,14 +101,8 @@ async function consumeConsent(
 export async function executeMcpTool(owner: string, name: McpToolName, args: unknown) {
   if (name === "grant_cost_consent") return grantConsent(owner, args);
   const input = mcpSchemas[name].parse(args);
-  if (consentOperations.some((operation) => operation === name) && "confirmed" in input) {
-    const consentToken = "consentToken" in input ? input.consentToken : undefined;
-    delete (input as { consentToken?: string }).consentToken;
-    if (consentToken)
-      await consumeConsent(owner, consentToken, name, input as unknown as { projectId: string; revision: number; idempotencyKey?: string });
-    else if (studioMode() === "production")
-      throw new StudioError("CONSENT", "Approve this paid step in the vidio studio first; a model-declared confirmation is not sufficient", 409);
-  }
+  const consentToken = "consentToken" in input ? input.consentToken : undefined;
+  if ("consentToken" in input) delete (input as { consentToken?: string }).consentToken;
   const aliases = {
     generate_scripts: "draft_scripts",
     start_video_job: "generate_segments",
@@ -118,6 +115,11 @@ export async function executeMcpTool(owner: string, name: McpToolName, args: unk
     : name as ToolName;
   if ((operations.some((operation) => operation === target) || ["save_scripts", "update_script", "begin_image_upload"].includes(target)) && "projectId" in input && typeof input.projectId === "string")
     await requireEnglishProject(owner, input.projectId);
+  if (consentOperations.some((operation) => operation === name)) {
+    if (!consentToken)
+      throw new StudioError("CONSENT", "Approve this paid step in the vidio studio first; a model-declared confirmation is not sufficient", 409);
+    await consumeConsent(owner, consentToken, name, input as unknown as { projectId: string; revision: number; idempotencyKey?: string });
+  }
   if (["retry_job", "cancel_job"].includes(target) && "jobId" in input && typeof input.jobId === "string")
     await requireEnglishProject(owner, (await getJob(owner, input.jobId)).projectId);
   if ("uploadId" in input && typeof input.uploadId === "string") {

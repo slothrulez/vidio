@@ -9,6 +9,7 @@
 
 import { NextRequest } from "next/server";
 import { videoAgent } from "@/agent";
+import { safeLogError } from '@/lib/log-redact';
 
 // 定义简化的事件数据类型
 interface EventData {
@@ -135,7 +136,7 @@ export async function POST(request: NextRequest) {
           eventData.finalSubtitles = state.finalSubtitles || eventData.finalSubtitles;
           eventData.errors = state.errors || eventData.errors;
           
-          console.log(`[Agent API] 节点 ${node} 返回数据:`, JSON.stringify(state, null, 2));
+          console.log(`[Agent API] 节点 ${node} 返回数据:`, safeLogError(state));
           
           // 发送节点完成事件
           sendEvent("node_complete", {
@@ -155,7 +156,7 @@ export async function POST(request: NextRequest) {
         });
         
       } catch (error) {
-        console.error("[Agent API] 执行错误:", error);
+        console.error("[Agent API] 执行错误:", safeLogError(error));
         sendEvent("error", {
           message: `执行失败: ${error}`,
           timestamp: Date.now(),

@@ -12,6 +12,7 @@ import {
   generateSegmentsNode,
   composeFinalNode,
 } from "./nodes";
+import { safeLogError } from '@/lib/log-redact';
 
 // 定义状态类型
 type GraphState = typeof AgentState.State;
@@ -175,7 +176,7 @@ export class VideoAgentExecutor {
       
       return finalState;
     } catch (error) {
-      console.error("[AgentExecutor] 执行失败:", error);
+      console.error("[AgentExecutor] 执行失败:", safeLogError(error));
       
       if (onProgress) {
         onProgress({

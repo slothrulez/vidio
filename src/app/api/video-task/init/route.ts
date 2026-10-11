@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
+import { safeLogError } from '@/lib/log-redact';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -35,7 +36,7 @@ export async function POST(request: NextRequest) {
       ? '/tmp'  // 生产环境使用 /tmp
       : publicDir;
     
-    console.log(`环境判断: COZE_PROJECT_ENV=${process.env.COZE_PROJECT_ENV}, publicDir存在=${fs.existsSync(publicDir)}, 使用目录: ${baseDir}`);
+    console.log(`环境判断: COZE_PROJECT_ENV=${process.env.COZE_PROJECT_ENV}, publicDir存在=${fs.existsSync(publicDir)}, 使用目录: [path]`);
     
     // 确保基础目录存在
     if (!fs.existsSync(baseDir)) {
@@ -62,7 +63,7 @@ export async function POST(request: NextRequest) {
     fs.mkdirSync(audioDir, { recursive: true });
     fs.mkdirSync(videoDir, { recursive: true });
     
-    console.log(`创建商品文件夹: ${folderPath}`);
+    console.log(`创建商品文件夹: [path]`);
 
     return new Response(JSON.stringify({
       folderPath,
@@ -75,7 +76,7 @@ export async function POST(request: NextRequest) {
       headers: { 'Content-Type': 'application/json' },
     });
   } catch (error) {
-    console.error('创建文件夹失败:', error);
+    console.error('创建文件夹失败:', safeLogError(error));
     return new Response(JSON.stringify({ 
       error: error instanceof Error ? error.message : '创建文件夹失败' 
     }), {

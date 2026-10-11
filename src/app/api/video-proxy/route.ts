@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import axios from 'axios';
+import { redactUrl, redactText } from '@/lib/log-redact';
 
 /**
  * 视频代理 API - 解决火山引擎视频 URL 的浏览器访问限制
@@ -13,7 +14,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    console.log('[Video Proxy] 代理视频:', videoUrl.substring(0, 100) + '...');
+    console.log('[Video Proxy] 代理视频:', redactUrl(videoUrl));
     
     const response = await axios.get(videoUrl, {
       responseType: 'arraybuffer',
@@ -41,7 +42,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : '未知错误';
-    console.error('[Video Proxy] 视频获取失败:', errorMessage);
+    console.error('[Video Proxy] 视频获取失败:', redactText(errorMessage));
     
     return NextResponse.json(
       { error: '视频获取失败', detail: errorMessage },

@@ -5,6 +5,7 @@ import {
   generateVideoSegments,
   composeFinalVideo,
 } from '@/agent/tools';
+import { redactUrl, safeLogError } from '@/lib/log-redact';
 
 /**
  * 外部API：一键生成商品带货视频
@@ -55,7 +56,7 @@ async function sendCallback(callbackUrl: string, data: unknown): Promise<void> {
       console.log('[API] 回调通知发送成功');
     }
   } catch (error) {
-    console.error('[API] 回调通知发送失败:', error);
+    console.error('[API] 回调通知发送失败:', safeLogError(error));
   }
 }
 
@@ -86,7 +87,7 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    console.log(`[API] 参数: imageUrl=${imageUrl}, language=${language}, productName=${productName}`);
+    console.log(`[API] 参数: imageUrl=${redactUrl(imageUrl)}, language=${language}, productName=${productName}`);
     
     // Step 1: 商品识别
     console.log('[API] Step 1: 商品识别...');
@@ -198,7 +199,7 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    console.log(`[API] 视频合成成功: finalVideoUrl=${finalVideoUrl}`);
+    console.log(`[API] 视频合成成功: finalVideoUrl=${redactUrl(finalVideoUrl)}`);
     
     // 计算总耗时
     const totalTime = Math.round((Date.now() - startTime) / 1000);
@@ -237,7 +238,7 @@ export async function POST(request: NextRequest) {
     });
     
   } catch (error: unknown) {
-    console.error('[API] 处理请求失败:', error);
+    console.error('[API] 处理请求失败:', safeLogError(error));
     
     const errorResponse = {
       success: false,

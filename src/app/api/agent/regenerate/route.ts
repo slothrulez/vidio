@@ -10,6 +10,7 @@ import axios from "axios";
 import { exec } from "child_process";
 import { promisify } from "util";
 import { TTSClient, VideoGenerationClient, Config, S3Storage } from "coze-coding-dev-sdk";
+import { safeLogError } from '@/lib/log-redact';
 
 const execAsync = promisify(exec);
 
@@ -164,7 +165,7 @@ export async function POST(request: NextRequest) {
         });
         
       } catch (error) {
-        console.error(`[Regenerate API] 错误:`, error);
+        console.error(`[Regenerate API] 错误:`, safeLogError(error));
         sendEvent("error", { segmentId, message: String(error) });
       }
       

@@ -7,6 +7,7 @@ import { setTimeout } from "node:timers/promises";
 import { readFile } from "node:fs/promises";
 import { config } from "dotenv";
 import { z } from "zod";
+import { randomUUID } from "node:crypto";
 import { toolOutputSchema } from "../src/studio/types";
 import { widgetUri } from "../src/studio/mcp";
 import { mcpSchemas } from "../src/studio/mcp-contracts";
@@ -114,8 +115,9 @@ async function main() {
       compose_final_video: "compose_final_video",
     };
     let consentToken: string | undefined;
+    const idempotencyKey = randomUUID();
     if (paid[operation]) {
-      const grant = await call("grant_cost_consent", { projectId: project.id, revision: project.revision, operation: paid[operation] });
+      const grant = await call("grant_cost_consent", { projectId: project.id, revision: project.revision, operation: paid[operation], idempotencyKey });
       assert.ok(grant.data.consent?.token, "consent token issued");
       checks++;
       consentToken = grant.data.consent!.token;
@@ -124,6 +126,7 @@ async function main() {
       projectId: project.id,
       revision: project.revision,
       confirmed: true,
+      idempotencyKey,
       ...(consentToken ? { consentToken } : {}),
       ...extra,
     });

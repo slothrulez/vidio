@@ -72,7 +72,7 @@ The canonical tools are:
 |---|---|---|
 | `identify_product` | `{ projectId: UUID, revision: integer ≥ 0, idempotencyKey?: string (8–100 chars), confirmed?: boolean }` | Queues fixture recognition; mutates the project. |
 | `generate_scripts` | Same as `identify_product` | Queues four fixture scripts after identification. |
-| `grant_cost_consent` (app-only) | `{ projectId, revision, operation: start_video_job \| regenerate_segment \| compose_final_video }` | Records a single-use human approval; returns `consent.token` (10-minute expiry). Required as `consentToken` by paid tools in production; optional in demo. |
+| `grant_cost_consent` (app-only) | `{ projectId, revision, operation: start_video_job \| regenerate_segment \| compose_final_video, idempotencyKey }` | Records a single-use human approval bound to owner, project, revision, operation and idempotencyKey; returns `consent.token` (10-minute expiry). Paid tools require it as `consentToken` with the same `idempotencyKey` in every mode. |
 | `start_video_job` | `{ projectId, revision, idempotencyKey?, confirmed: true, consentToken? }` | Explicit approval required; queues local sample scenes. |
 | `get_video_job_status` | `{ jobId: UUID }` | Read-only; returns the owned job ID, status, progress and bounded error. |
 | `regenerate_segment` | `{ projectId, revision, idempotencyKey?, confirmed: true, segmentId: integer 1–4 }` | Explicit approval required; queues one sample scene. |

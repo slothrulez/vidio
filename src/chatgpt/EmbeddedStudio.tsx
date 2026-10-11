@@ -391,12 +391,11 @@ export function EmbeddedStudio({
         projectId: request.projectId,
         revision: request.revision,
         operation: name,
-      });
-      return transport.callTool(name, {
-        ...input,
         idempotencyKey: key,
-        consentToken: grant.structuredContent.consent?.token,
       });
+      const consentToken = grant.structuredContent.consent?.token;
+      if (!consentToken) throw new Error("Approval could not be recorded; try again.");
+      return transport.callTool(name, { ...input, idempotencyKey: key, consentToken });
     });
   };
   const upload = async (files: File[]) => {

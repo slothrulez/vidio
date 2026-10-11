@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { LLMClient, S3Storage, Config, HeaderUtils } from 'coze-coding-dev-sdk';
+import { redactUrl, safeLogError } from '@/lib/log-redact';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -51,7 +52,7 @@ export async function POST(request: NextRequest) {
           expireTime: 300,
         });
         auxiliaryImageUrls.push(auxUrl);
-        console.log(`[API] 辅助图片${i + 1}已上传: ${auxUrl}`);
+        console.log(`[API] 辅助图片${i + 1}已上传: ${redactUrl(auxUrl)}`);
       }
     }
 
@@ -150,7 +151,7 @@ export async function POST(request: NextRequest) {
       imageKey,
     });
   } catch (error) {
-    console.error('识别失败:', error);
+    console.error('识别失败:', safeLogError(error));
     return NextResponse.json(
       { error: error instanceof Error ? error.message : '识别失败' },
       { status: 500 }

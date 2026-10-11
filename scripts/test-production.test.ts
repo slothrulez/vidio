@@ -340,12 +340,20 @@ test("production paid MCP tools require a server-issued single-use human approva
   project=await getProject(owner,project.id);
   const base={projectId:project.id,revision:project.revision,confirmed:true as const};
   await assert.rejects(executeMcpTool(owner,"start_video_job",{...base,idempotencyKey:randomUUID()}),(error:unknown)=>error instanceof StudioError&&error.code==="CONSENT"&&error.status===409);
-  await assert.rejects(executeMcpTool(owner,"grant_cost_consent",{projectId:project.id,revision:project.revision+1,operation:"start_video_job"}),(error:unknown)=>error instanceof StudioError&&error.code==="REVISION");
-  const grant=await executeMcpTool(owner,"grant_cost_consent",{projectId:project.id,revision:project.revision,operation:"start_video_job"});
+  await assert.rejects(executeMcpTool(owner,"grant_cost_consent",{projectId:project.id,revision:project.revision+1,operation:"start_video_job",idempotencyKey:randomUUID()}),(error:unknown)=>error instanceof StudioError&&error.code==="REVISION");
+  const key=randomUUID();
+  const grant=await executeMcpTool(owner,"grant_cost_consent",{projectId:project.id,revision:project.revision,operation:"start_video_job",idempotencyKey:key});
   const token=grant.structuredContent.consent!.token;
+  await assert.rejects(executeMcpTool(owner,"start_video_job",{...base,idempotencyKey:randomUUID(),consentToken:token}),(error:unknown)=>error instanceof StudioError&&error.code==="CONSENT");
+  await assert.rejects(executeMcpTool(owner,"start_video_job",{...base,consentToken:token}),(error:unknown)=>error instanceof StudioError&&error.code==="CONSENT");
+  await assert.rejects(executeMcpTool(owner,"start_video_job",{...base,revision:project.revision+1,idempotencyKey:key,consentToken:token}),(error:unknown)=>error instanceof StudioError&&["CONSENT","REVISION"].includes(error.code));
+  await assert.rejects(executeMcpTool("other-owner","grant_cost_consent",{projectId:project.id,revision:project.revision,operation:"regenerate_segment",idempotencyKey:randomUUID()}),(error:unknown)=>error instanceof StudioError&&error.code==="NOT_FOUND");
+  await assert.rejects(executeMcpTool("other-owner","regenerate_segment",{...base,segmentId:1,idempotencyKey:key,consentToken:token}),(error:unknown)=>error instanceof StudioError&&["CONSENT","NOT_FOUND"].includes(error.code));
+  await assert.rejects(executeMcpTool("other-owner","compose_final_video",{...base,segmentIds:[1],idempotencyKey:key,consentToken:token}),(error:unknown)=>error instanceof StudioError&&["CONSENT","NOT_FOUND"].includes(error.code));
+  for (const name of ["identify_product","generate_scripts"] as const)
+    await assert.rejects(executeMcpTool(owner,name,{projectId:project.id,revision:project.revision,idempotencyKey:randomUUID()}),(error:unknown)=>error instanceof StudioError&&error.code==="NOT_CONFIGURED"&&error.status===503);
   await assert.rejects(executeMcpTool(owner,"compose_final_video",{...base,idempotencyKey:randomUUID(),consentToken:token,segmentIds:[1]}),(error:unknown)=>error instanceof StudioError&&error.code==="CONSENT");
   await assert.rejects(executeMcpTool("other-owner","start_video_job",{...base,idempotencyKey:randomUUID(),consentToken:token}),(error:unknown)=>error instanceof StudioError&&["CONSENT","NOT_FOUND"].includes(error.code));
-  const key=randomUUID();
   const started=await executeMcpTool(owner,"start_video_job",{...base,idempotencyKey:key,consentToken:token});
   assert.ok(started.structuredContent.job?.id);
   const replay=await executeMcpTool(owner,"start_video_job",{...base,idempotencyKey:key,consentToken:token});
@@ -355,4 +363,31 @@ test("production paid MCP tools require a server-issued single-use human approva
   assert.ok(used.rows[0].used_at);
   assert.equal(used.rows[0].idempotency_key,key);
   await database().query("DELETE FROM vidio_projects WHERE owner_id=$1",[owner]);
+});
+
+test("provider failures never leak URLs, task IDs or secrets into job records, structured results or logs",async()=>{
+  const subject=`leak-${randomUUID()}`;
+  const bearer=await signToken({sub:subject});
+  const owner=`${process.env.OAUTH_ISSUER}|${subject}`;
+  const logs:string[]=[];
+  const spies=(["log","error","warn"] as const).map(level=>mock.method(console,level,(...args:unknown[])=>{logs.push(args.map(arg=>typeof arg==="string" ? arg : JSON.stringify(arg)).join(" "));}));
+  try {
+    const project=await createProject(owner,{name:"Leak test",language:"english",ratio:"16:9"});
+    await scripts(request("/scripts",{revision:0,scripts:[{id:1,script:"Mock",prompt:"Mock"}]},bearer),{params:Promise.resolve({projectId:project.id})});
+    const job=await startJob(owner,"generate_segments",{projectId:project.id,revision:1,confirmed:true,idempotencyKey:randomUUID()});
+    const secretUrl="https://ark.example.test/tasks/task-991?sig=SECRETSIG&key=AKIASECRET";
+    const provider:VideoProvider={submit:async()=>{throw new Error(`Provider rejected ${secretUrl} for /tmp/vidio/work/clip.mp4`);},poll:async()=>{throw new Error("Must not poll");},download:async()=>{throw new Error("Must not download");}};
+    await runJob(job.id,(job,project,context)=>executeVideoJob(job,project,context,provider));
+    const failed=await getJob(owner,job.id);
+    assert.equal(failed.status,"failed");
+    const status=await executeMcpTool(owner,"get_video_job_status",{jobId:job.id});
+    const read=await executeMcpTool(owner,"get_project",{projectId:project.id});
+    for (const text of [JSON.stringify(failed),JSON.stringify(status.structuredContent),JSON.stringify(read.structuredContent),logs.join("\n")]) {
+      for (const secret of ["SECRETSIG","AKIASECRET","task-991","ark.example.test","/tmp/vidio"]) assert.doesNotMatch(text,new RegExp(secret),`leaked ${secret}`);
+    }
+    for (const text of [JSON.stringify(status.structuredContent),JSON.stringify(read.structuredContent)]) assert.doesNotMatch(text,/https?:\/\//,"public structured results must not contain URLs");
+  } finally {
+    spies.forEach(spy=>spy.mock.restore());
+    await database().query("DELETE FROM vidio_projects WHERE owner_id=$1",[owner]);
+  }
 });

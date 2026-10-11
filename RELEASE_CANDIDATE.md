@@ -13,7 +13,7 @@ deployment** until the launch gates below are closed. Nothing was published or d
 | Embedded UI | `pnpm test:ui` | 11 passed |
 | Branding | `pnpm test:branding` | 6 passed |
 | Integration (PostgreSQL, mocked S3/JWKS/provider, real FFmpeg) | `TEST_DATABASE_URL=postgresql://.../vidio_test pnpm test:integration` | 24 passed, incl. killed/restarted worker |
-| MCP protocol (running app + worker) | `pnpm test:mcp` / `pnpm test:mcp:identification` | 72 checks passed / passed |
+| MCP protocol (running app + worker) | `pnpm test:mcp` / `pnpm test:mcp:identification` | 75–76 checks passed (count varies by one timing-dependent check) / passed |
 | Widget + production build | `pnpm build:widget` / `pnpm build` | passed |
 | Official MCP Apps host replay | manual, recorded | passed (see gaps) |
 | Dependency audit (`pnpm audit --prod --registry=https://registry.npmjs.org`) | — | 0 critical/high; 1 moderate (`baseline-browser-mapping`), 1 low (`@babel/core`) |
@@ -57,9 +57,10 @@ historical non-English website projects are read-only for the MCP tools.
 
 ## Known bugs and gaps
 
-- Paid MCP tools now require a server-issued, single-use `consentToken` in production (app-only
-  `grant_cost_consent`, bound to owner/project/revision/operation, 10-minute expiry, replay allowed only
-  with the same idempotencyKey). Demo mode accepts a missing token for model-only flows. The host does
+- Paid MCP tools (`start_video_job`, `regenerate_segment`, `compose_final_video`) require a server-issued,
+  single-use `consentToken` in every mode (app-only `grant_cost_consent`, bound to owner, project, revision,
+  operation and idempotencyKey; 10-minute expiry; replay only with the identical idempotencyKey). Legacy agent
+  and API logs redact URLs, paths and error internals via `src/lib/log-redact.ts`. The host does
   not cryptographically prove a human click, so this remains defence in depth, not proof of consent.
 - Live recognition, live script generation and real English speech/TTS are not connected;
   demo audio is a tone. Production recognition/script tools fail explicitly.
