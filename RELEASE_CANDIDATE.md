@@ -13,7 +13,7 @@ deployment** until the launch gates below are closed. Nothing was published or d
 | Embedded UI | `pnpm test:ui` | 11 passed |
 | Branding | `pnpm test:branding` | 6 passed |
 | Integration (PostgreSQL, mocked S3/JWKS/provider, real FFmpeg) | `TEST_DATABASE_URL=postgresql://.../vidio_test pnpm test:integration` | 24 passed, incl. killed/restarted worker |
-| MCP protocol (running app + worker) | `pnpm test:mcp` / `pnpm test:mcp:identification` | 75–76 checks passed (count varies by one timing-dependent check) / passed |
+| MCP protocol (running app + worker) | `pnpm test:mcp` / `pnpm test:mcp:identification` | 55 checks passed (deterministic; status polls are not counted) / passed |
 | Widget + production build | `pnpm build:widget` / `pnpm build` | passed |
 | Official MCP Apps host replay | manual, recorded | passed (see gaps) |
 | Dependency audit (`pnpm audit --prod --registry=https://registry.npmjs.org`) | — | 0 critical/high; 1 moderate (`baseline-browser-mapping`), 1 low (`@babel/core`) |

@@ -20,10 +20,10 @@ const client = new Client(
   { capabilities: {} },
 );
 let checks = 0;
-async function call(name: string, args: Record<string, unknown>) {
+async function call(name: string, args: Record<string, unknown>, countAsCheck = true) {
   const result = await client.callTool({ name, arguments: args });
   assert.equal(result.isError, undefined, JSON.stringify(result.content));
-  checks++;
+  if (countAsCheck) checks++;
   return {
     data: toolOutputSchema.parse(result.structuredContent),
     media: z
@@ -133,8 +133,9 @@ async function main() {
     const job = queued.data.job!;
     const deadline = Date.now() + 60000;
     while (Date.now() < deadline) {
-      const status = (await call("get_video_job_status", { jobId: job.id })).data.job!;
+      const status = (await call("get_video_job_status", { jobId: job.id }, false)).data.job!;
       if (status.status === "succeeded") {
+        checks++;
         project = (await call("get_project", { projectId: project.id })).data
           .project!;
         return;
