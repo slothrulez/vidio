@@ -41,7 +41,7 @@ test('page metadata and social previews use vidio, not template attribution', ()
   assert.equal(metadata.openGraph.url, undefined);
   assert.doesNotMatch(source, /code\.coze\.cn/);
   assert.doesNotMatch(source, legacyIdentity);
-  assert.match(source, /<html lang="zh-CN">/);
+  assert.match(source, /<html lang="en">/);
   assert.match(read('src/app/opengraph-image.alt.txt'), /^vidio/);
 });
 

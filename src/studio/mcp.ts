@@ -28,6 +28,7 @@ const titles: Record<McpToolName, string> = {
   cancel_job: "Cancel a demo job",
   get_download: "Get sample video download",
   update_script: "Edit a demo script",
+  grant_cost_consent: "Record human approval for a paid step",
   identify_product: "Identify sample product",
   draft_scripts: "Draft fixture scripts",
   generate_scripts: "Generate product scripts",
@@ -46,7 +47,7 @@ export function createMcpServer(owner: string) {
   if(domain && !domain.startsWith("https://"))throw new StudioError("CONFIGURATION","The widget origin must use HTTPS",503);
   const server = new McpServer({ name: "vidio", version: "0.1.0" });
   for (const name of Object.keys(mcpSchemas) as McpToolName[]) {
-    const appOnly=["begin_image_upload","append_image_chunk","finish_image_upload","abort_image_upload","save_scripts"].includes(name);
+    const appOnly=["begin_image_upload","append_image_chunk","finish_image_upload","abort_image_upload","save_scripts","grant_cost_consent"].includes(name);
     const metadata: Record<string, unknown> = {
       securitySchemes: [{ type: "oauth2", scopes: [mcpScope] }],
     };
@@ -74,7 +75,7 @@ export function createMcpServer(owner: string) {
           ].includes(name),
           destructiveHint: name === "cancel_job",
             openWorldHint: mode==="production",
-          idempotentHint: !["create_project","update_script","save_scripts","begin_image_upload"].includes(name),
+          idempotentHint: !["create_project","update_script","save_scripts","begin_image_upload","grant_cost_consent"].includes(name),
         },
         _meta: appOnly ? { ...metadata,ui:{visibility:["app"]} } : metadata,
       },

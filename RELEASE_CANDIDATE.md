@@ -57,8 +57,10 @@ historical non-English website projects are read-only for the MCP tools.
 
 ## Known bugs and gaps
 
-- `confirmed: true` is client-declared; server-verifiable single-use human cost consent is not
-  implemented (launch gate).
+- Paid MCP tools now require a server-issued, single-use `consentToken` in production (app-only
+  `grant_cost_consent`, bound to owner/project/revision/operation, 10-minute expiry, replay allowed only
+  with the same idempotencyKey). Demo mode accepts a missing token for model-only flows. The host does
+  not cryptographically prove a human click, so this remains defence in depth, not proof of consent.
 - Live recognition, live script generation and real English speech/TTS are not connected;
   demo audio is a tone. Production recognition/script tools fail explicitly.
 - Legacy website routes (shell execution, caller-controlled files, SSRF-capable fetch, unbounded
@@ -91,11 +93,11 @@ Never set `VIDIO_MCP_LOCAL_AUTH` in production. See README for the full table.
 
 1. Provision an OAuth 2.1 authorization server (PKCE, browser sign-in) issuing RS256/ES256 JWTs
    with scope `vidio:studio`; configure issuer/JWKS/audience.
-2. Provision PostgreSQL, run `pnpm db:migrate` (0001–0005), private S3 with all four Block Public
+2. Provision PostgreSQL, run `pnpm db:migrate` (0001–0006), private S3 with all four Block Public
    Access flags and least-privilege IAM, canonical HTTPS origin.
 3. Deploy the Next.js service and a separate long-running `pnpm worker` (FFmpeg/FFprobe) with
    identical configuration; verify legacy routes return 503 from the public edge.
-4. Implement server-verified human cost consent and operator budget/kill switches; connect live
+4. Add operator budget/kill switches and alerting; connect live
    recognition/script adapters and verify English speech before enabling paid generation.
 5. Register the HTTPS `/mcp` endpoint in the ChatGPT developer connector and complete host
    acceptance; publish privacy/deletion policy and storage retention.

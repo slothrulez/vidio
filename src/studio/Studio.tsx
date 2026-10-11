@@ -152,7 +152,7 @@ export function Studio({
   const [job, setJob] = useState<StudioJob>(),
     [media, setMedia] = useState<Record<string, string>>({});
   const [name, setName] = useState("Everyday essential"),
-    [language, setLanguage] = useState<"english" | "mandarin">("english"),
+    [language, setLanguage] = useState<"english">("english"),
     [ratio, setRatio] = useState<"16:9" | "9:16" | "1:1">("16:9");
   const [working, setWorking] = useState(false),
     [error, setError] = useState(""),
@@ -536,7 +536,6 @@ export function Studio({
                     className="w-full rounded-lg border bg-white p-2 text-sm"
                   >
                     <option value="english">English</option>
-                    <option value="mandarin">Mandarin</option>
                   </select>
                 </div>
                 <div>
@@ -585,7 +584,7 @@ export function Studio({
                       {project.name}
                     </p>
                     <p>
-                      {project.language === "english" ? "English" : "Mandarin"}{" "}
+                      {project.language === "english" ? "English" : project.language === "mandarin" ? "Mandarin (legacy)" : "Cantonese (legacy)"}{" "}
                       · {project.ratio} · Revision {project.revision}
                     </p>
                   </div>

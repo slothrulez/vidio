@@ -386,9 +386,18 @@ export function EmbeddedStudio({
     const key = actionKeys.current.get(identity) ?? crypto.randomUUID();
     actionKeys.current.set(identity, key);
     const { name, ...input } = args;
-    await run(() =>
-      transport.callTool(name, { ...input, idempotencyKey: key }),
-    );
+    await run(async () => {
+      const grant = await transport.callTool("grant_cost_consent", {
+        projectId: request.projectId,
+        revision: request.revision,
+        operation: name,
+      });
+      return transport.callTool(name, {
+        ...input,
+        idempotencyKey: key,
+        consentToken: grant.structuredContent.consent?.token,
+      });
+    });
   };
   const upload = async (files: File[]) => {
     if (!projectRef.current) return;

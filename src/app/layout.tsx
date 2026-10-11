@@ -12,32 +12,32 @@ export const metadata: Metadata = {
       : `https://${projectDomain}`,
   ),
   title: {
-    default: 'vidio | AI 商品视频创作',
+    default: 'vidio | AI product video creation',
     template: '%s | vidio',
   },
   description:
-    '使用 vidio，将商品图片转化为带货短视频。通过对话识别商品卖点、创作文案、生成配音与视频片段，并合成完整成片。',
+    'Turn product images into short promotional videos with vidio: identify selling points, draft scripts, generate voiceover and scenes, and compose the final video.',
   keywords: [
     'vidio',
     'AI product video',
-    '商品视频',
-    '带货短视频',
-    'AI 视频创作',
-    '视频配音',
+    'product video generator',
+    'promotional video',
+    'AI video creation',
+    'voiceover',
   ],
   applicationName: 'vidio',
   openGraph: {
-    title: 'vidio | AI 商品视频创作',
+    title: 'vidio | AI product video creation',
     description:
-      '使用 vidio，将商品图片转化为带货短视频。从商品卖点和文案到配音、视频片段与完整成片。',
+      'Turn product images into short promotional videos with vidio — from selling points and scripts to voiceover, scenes and the finished video.',
     siteName: 'vidio',
-    locale: 'zh_CN',
+    locale: 'en_US',
     type: 'website',
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'vidio | AI 商品视频创作',
-    description: '使用 vidio，从商品图片、卖点和文案创作完整的带货短视频。',
+    title: 'vidio | AI product video creation',
+    description: 'Create complete promotional product videos from images, selling points and scripts with vidio.',
   },
   robots: {
     index: true,
@@ -53,7 +53,7 @@ export default function RootLayout({
   const isDev = process.env.COZE_PROJECT_ENV === 'DEV';
 
   return (
-    <html lang="zh-CN">
+    <html lang="en">
       <body className={`antialiased`}>
         {isDev && <Inspector />}
         {children}

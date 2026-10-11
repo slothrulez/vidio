@@ -14,6 +14,7 @@ import { rateLimit } from "../src/studio/rate-limit";
 import { signingKey } from "../src/studio/config";
 import { claimJob,providerCheckpoint,recoverJobs,completedSegment } from "../src/studio/lifecycle";
 import { executeTool } from "../src/studio/service";
+import { executeMcpTool } from "../src/studio/mcp-contracts";
 import { videoFixture } from "./fixtures/video";
 import { validateProviderVideo } from "../src/studio/video-provider";
 import { composeOwnedSegments } from "../src/studio/composition";
@@ -45,7 +46,7 @@ let putProbe:(()=>Promise<void>)|undefined;
 const objects=new Map<string,{buffer:Buffer;mime:string}>();
 let privateBucket=true;
 before(async()=>{
-  for (const name of ["0001_studio.sql","0002_job_lifecycle.sql","0003_result_ownership.sql","0004_widget_uploads.sql","0005_release_safety.sql"]) await database().query(await readFile(`migrations/${name}`,"utf8"));
+  for (const name of ["0001_studio.sql","0002_job_lifecycle.sql","0003_result_ownership.sql","0004_widget_uploads.sql","0005_release_safety.sql","0006_cost_consent.sql"]) await database().query(await readFile(`migrations/${name}`,"utf8"));
   const {publicKey,privateKey}=await generateKeyPair("RS256");
   clip=await videoFixture();
   const jwk={...await exportJWK(publicKey),kid:"test-key",alg:"RS256",use:"sig"};
@@ -327,4 +328,31 @@ test("production video validation derives real duration and rejects malformed fi
   await assert.rejects(()=>composeOwnedSegments(owner,project,[1]),(error:unknown)=>error instanceof StudioError && error.code==="ASSET_LIMIT");
   assert.equal(ranges.length,before);
   await database().query("UPDATE vidio_assets SET size=$2 WHERE id=$1",[id,clip.length]);
+});
+
+test("production paid MCP tools require a server-issued single-use human approval",async()=>{
+  const consentSubject=`consent-${randomUUID()}`;
+  const consentBearer=await signToken({sub:consentSubject});
+  const owner=`${process.env.OAUTH_ISSUER}|${consentSubject}`;
+  let project=await createProject(owner,{name:"Consent production",language:"english",ratio:"16:9"});
+  const set=await scripts(request("/scripts",{revision:0,scripts:[1,2].map(id=>({id,script:`Scene ${id}`,prompt:"Mock visual"}))},consentBearer),{params:Promise.resolve({projectId:project.id})});
+  assert.equal(set.status,200);
+  project=await getProject(owner,project.id);
+  const base={projectId:project.id,revision:project.revision,confirmed:true as const};
+  await assert.rejects(executeMcpTool(owner,"start_video_job",{...base,idempotencyKey:randomUUID()}),(error:unknown)=>error instanceof StudioError&&error.code==="CONSENT"&&error.status===409);
+  await assert.rejects(executeMcpTool(owner,"grant_cost_consent",{projectId:project.id,revision:project.revision+1,operation:"start_video_job"}),(error:unknown)=>error instanceof StudioError&&error.code==="REVISION");
+  const grant=await executeMcpTool(owner,"grant_cost_consent",{projectId:project.id,revision:project.revision,operation:"start_video_job"});
+  const token=grant.structuredContent.consent!.token;
+  await assert.rejects(executeMcpTool(owner,"compose_final_video",{...base,idempotencyKey:randomUUID(),consentToken:token,segmentIds:[1]}),(error:unknown)=>error instanceof StudioError&&error.code==="CONSENT");
+  await assert.rejects(executeMcpTool("other-owner","start_video_job",{...base,idempotencyKey:randomUUID(),consentToken:token}),(error:unknown)=>error instanceof StudioError&&["CONSENT","NOT_FOUND"].includes(error.code));
+  const key=randomUUID();
+  const started=await executeMcpTool(owner,"start_video_job",{...base,idempotencyKey:key,consentToken:token});
+  assert.ok(started.structuredContent.job?.id);
+  const replay=await executeMcpTool(owner,"start_video_job",{...base,idempotencyKey:key,consentToken:token});
+  assert.equal(replay.structuredContent.job?.id,started.structuredContent.job?.id);
+  await assert.rejects(executeMcpTool(owner,"start_video_job",{...base,idempotencyKey:randomUUID(),consentToken:token}),(error:unknown)=>error instanceof StudioError&&error.code==="CONSENT");
+  const used=await database().query("SELECT used_at,idempotency_key FROM vidio_cost_consents WHERE id=$1",[token]);
+  assert.ok(used.rows[0].used_at);
+  assert.equal(used.rows[0].idempotency_key,key);
+  await database().query("DELETE FROM vidio_projects WHERE owner_id=$1",[owner]);
 });

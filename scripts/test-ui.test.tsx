@@ -113,6 +113,9 @@ test("explicit review and a separate confirmation are required before generation
     ),
   );
   const started = calls.find((call) => call.name === "start_video_job")!;
+  const grant = calls.findIndex((call) => call.name === "grant_cost_consent");
+  assert.ok(grant >= 0 && grant < calls.indexOf(started), "approval is requested before the paid tool");
+  assert.equal(calls[grant].args.operation, "start_video_job");
   assert.equal(started.args.confirmed, true);
   assert.equal(started.args.revision, 3);
   assert.equal(typeof started.args.idempotencyKey, "string");

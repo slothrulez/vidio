@@ -4,14 +4,14 @@
 
 AI product-video creation — from product image to finished video.
 
-AI商家带货视频生成工具，面向电商商家、带货主播，提供一键生成带货短视频的能力。
+vidio helps e-commerce sellers and creators turn product images into short promotional videos: identify the product and its selling points, draft a script, generate voiceover and scenes, and compose the final video.
 
-## 品牌与页面元数据
+## Brand and page metadata
 
-- 品牌名称统一为小写 **vidio**；保留现有中文界面和视频创作流程。
-- 原创标志位于 `public/assets/vidio-logo.svg` 和 `public/assets/vidio-icon.svg`；浏览器图标、应用图标及分享图片通过 Next.js 元数据文件自动提供。
-- 公共部署前，在构建环境中将已有的 `COZE_PROJECT_DOMAIN_DEFAULT` 设置为实际应用域名或完整 URL，供分享图片和现有 Agent HTTP 调度使用。未配置时，分享图片地址指向本地开发地址 `http://localhost:5000`；不要填入第三方品牌网站。
-- 运行 `pnpm test:branding` 执行不访问模型或生成视频的品牌回归检查；现有检查命令仍为 `pnpm lint`、`pnpm ts-check`、`pnpm validate` 和 `pnpm build`。
+- The brand is always lowercase **vidio**. The original logo lives in `public/assets/vidio-logo.svg` and `public/assets/vidio-icon.svg`; favicon, app icons and the social image are in `src/app/`.
+- Site metadata is English (`src/app/layout.tsx`). The legacy conversational website UI and its LLM prompts remain Chinese because they drive Chinese Volcengine models; the MCP Apps studio (ChatGPT) is English-only.
+- Before a public deployment set the existing `COZE_PROJECT_DOMAIN_DEFAULT` to the real application domain or full URL so metadata resolves correctly.
+- `pnpm test:branding` runs branding regression checks without calling models or generating video; `pnpm validate`, `pnpm lint` and `pnpm build` remain the standard checks.
 
 ## Safe MCP Apps preview (no paid provider calls)
 
@@ -72,7 +72,8 @@ The canonical tools are:
 |---|---|---|
 | `identify_product` | `{ projectId: UUID, revision: integer ≥ 0, idempotencyKey?: string (8–100 chars), confirmed?: boolean }` | Queues fixture recognition; mutates the project. |
 | `generate_scripts` | Same as `identify_product` | Queues four fixture scripts after identification. |
-| `start_video_job` | `{ projectId, revision, idempotencyKey?, confirmed: true }` | Explicit approval required; queues local sample scenes. |
+| `grant_cost_consent` (app-only) | `{ projectId, revision, operation: start_video_job \| regenerate_segment \| compose_final_video }` | Records a single-use human approval; returns `consent.token` (10-minute expiry). Required as `consentToken` by paid tools in production; optional in demo. |
+| `start_video_job` | `{ projectId, revision, idempotencyKey?, confirmed: true, consentToken? }` | Explicit approval required; queues local sample scenes. |
 | `get_video_job_status` | `{ jobId: UUID }` | Read-only; returns the owned job ID, status, progress and bounded error. |
 | `regenerate_segment` | `{ projectId, revision, idempotencyKey?, confirmed: true, segmentId: integer 1–4 }` | Explicit approval required; queues one sample scene. |
 | `compose_final_video` | `{ projectId, revision, idempotencyKey?, confirmed: true, segmentIds: unique array of 1–4 integers 1–4 }` | Explicit approval required; queues local composition. |
@@ -195,248 +196,94 @@ private S3 mocks, upload validation and signed completed-video retrieval.
 
 The installed stable TypeScript MCP SDK v2 packages are pinned to 2.3.1, MCP Apps to 2.0.3, and schemas use Zod 4. APIs are verified against the official [SDK v2 source](https://github.com/modelcontextprotocol/typescript-sdk), [MCP Apps](https://github.com/modelcontextprotocol/ext-apps), [OpenAI quickstart](https://developers.openai.com/apps-sdk/quickstart), [MCP Apps compatibility](https://developers.openai.com/apps-sdk/mcp-apps-in-chatgpt), and [authentication guidance](https://developers.openai.com/apps-sdk/build/auth). No plugin tutorial or new AI framework is used.
 
-## 功能特性
+## Legacy website features
 
-- **智能商品识别**：上传商品图片，自动识别商品名称和核心卖点
-- **多图片支持**：支持同时上传多张图片（主图+辅图），综合分析商品信息
-- **AI文案生成**：基于商品特点自动生成带货文案和画面描述
-- **视频比例选择**：支持横版(16:9)和竖版(9:16)两种视频比例
-- **语言选择**：支持普通话和粤语两种配音语言
-- **分段视频生成**：每个文案分段生成独立视频片段
-- **智能合成**：自动将所有片段合成为完整带货视频
-- **实时预览**：支持分段视频和最终视频在线预览
-- **一键下载**：生成完成后可直接下载视频文件
+- **Product recognition** from one or more uploaded images (main image plus auxiliary images).
+- **AI script generation** with per-scene visual prompts.
+- **Aspect ratios** 16:9 (landscape) and 9:16 (portrait).
+- **Segmented generation**: each script segment becomes its own video clip.
+- **Composition** of all clips into one video with captions and background music.
+- **Preview and download** of clips and the final video.
 
-## 工作流程
+The legacy website speaks Chinese to Chinese Volcengine models; the English-only ChatGPT studio is documented below under *Separate vidio MCP Apps studio (v2)*.
+
+## Workflow
 
 ```
-用户上传图片 → 商品识别 → 自动生成文案 → 用户确认/修改文案
-→ 生成分段视频 → 用户预览/调整 → 合成最终视频 → 下载
+Upload images → identify product → draft scripts → confirm / edit scripts
+→ generate clips → preview / regenerate → compose final video → download
 ```
 
-### 阶段说明
-
-| 阶段 | 说明 | 用户操作 |
+| Stage | What happens | User action |
 |-----|------|---------|
-| 商品识别 | 分析图片，提取商品信息 | 上传图片 |
-| 文案生成 | 生成带货文案和画面描述 | 等待/修改 |
-| 视频生成 | 为每个分段生成视频+配音 | 预览/重新生成 |
-| 视频合成 | 合成最终视频+字幕+BGM | 确认合成 |
-| 完成 | 输出成品视频 | 下载 |
+| Identification | Analyse images, extract product information | Upload images |
+| Scripts | Generate script and visual prompts | Wait / edit |
+| Generation | Generate a clip with voiceover per segment | Preview / regenerate |
+| Composition | Combine clips with captions and music | Confirm |
+| Done | Final video is ready | Download |
 
-## 密钥安全
+## Secrets
 
-### 推送到 GitHub 前的安全检查
+`.gitignore` excludes `.env`, `.env.local`, `.env.*.local`, `*.pem`, `*.key` and `secrets/`. Before pushing, run `git status` and `git ls-files | grep .env` (must return nothing). Copy `.env.example` to `.env.local` and fill in real values locally; never hardcode keys in code, use GitHub repository secrets for CI, and rotate any key that leaks.
 
-项目已在 `.gitignore` 中配置排除以下敏感文件，**不会被推送到 GitHub**：
-
-```
-# Environment variables
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-
-# Secrets and keys
-*.pem
-*.key
-secrets/
-```
-
-### 推送前验证命令
+## Quick start
 
 ```bash
-# 查看将要推送的文件列表
-git status
-
-# 确认 .env 文件不在列表中
-git ls-files | grep .env
-# 应返回空结果
-```
-
-### 创建示例配置文件
-
-建议创建 `.env.example` 文件供其他开发者参考（不含真实密钥）：
-
-```bash
-# .env.example（可提交到 GitHub）
-ARK_API_KEY=your_api_key_here
-ARK_BASE_URL=https://ark.cn-beijing.volces.com
-VIDEO_MODEL_EP=your_video_model_endpoint_here
-
-S3_ACCESS_KEY=your_access_key_here
-S3_SECRET_KEY=your_secret_key_here
-S3_BUCKET=your_bucket_name_here
-S3_REGION=cn-beijing
-S3_ENDPOINT=https://tos-cn-beijing.volces.com
-```
-
-### 重要提示
-
-1. **禁止在代码中硬编码密钥**
-   ```typescript
-   // ✅ 正确 - 通过环境变量读取
-   const apiKey = process.env.ARK_API_KEY;
-
-   // ❌ 错误 - 禁止硬编码
-   const apiKey = "ark-xxx-xxx";
-   ```
-
-2. **GitHub Secrets**：如需在 CI/CD 中使用密钥，请在 GitHub 仓库设置中添加 Repository secrets
-
-3. **密钥更换**：如密钥已泄露，请立即更换并更新 `.env.local`
-
-## 快速开始
-
-### 环境配置
-
-在 `.env.local` 文件中配置以下环境变量：
-
-```bash
-# 火山引擎 API 配置
-ARK_API_KEY=your_api_key          # 大模型 API 密钥
-ARK_BASE_URL=https://ark.cn-beijing.volces.com
-VIDEO_MODEL_EP=ep-xxx             # 视频生成模型 endpoint
-
-# 对象存储配置
-S3_ACCESS_KEY=your_access_key
-S3_SECRET_KEY=your_secret_key
-S3_BUCKET=your_bucket_name
-S3_REGION=cn-beijing
-S3_ENDPOINT=https://tos-cn-beijing.volces.com
-```
-
-### 启动开发服务器
-
-```bash
+cp .env.example .env.local   # fill in values; see the production table above for managed mode
 pnpm install
-pnpm dev
+pnpm dev                      # http://localhost:5000
+pnpm build && pnpm start      # production build
 ```
 
-启动后访问 [http://localhost:5000](http://localhost:5000)
+Legacy website variables (Volcengine): `ARK_API_KEY`, `ARK_BASE_URL`, `VIDEO_MODEL_EP`, and the S3-compatible storage settings documented in `.env.example`.
 
-### 构建生产版本
-
-```bash
-pnpm build
-pnpm start
-```
-
-## 项目结构
+## Project structure
 
 ```
 src/
 ├── app/
-│   ├── page.tsx              # 主页面（对话式Agent UI）
-│   ├── layout.tsx            # 根布局
-│   ├── globals.css           # 全局样式
+│   ├── page.tsx              # Legacy conversational agent UI
+│   ├── layout.tsx            # Root layout and metadata
+│   ├── mcp/route.ts          # MCP Streamable HTTP endpoint
+│   ├── studio/               # Legacy studio page
 │   └── api/
-│       ├── chat-agent/       # 对话式 Agent API (SSE流式)
-│       ├── generate-video/   # 视频生成 API
-│       ├── generate-tts/     # 语音合成 API
-│       └── upload-image/     # 图片上传 API
-├── agent/
-│   ├── chat-node.ts          # Agent 对话节点逻辑
-│   ├── chat-state.ts         # Agent 状态定义
-│   ├── tools.ts              # Agent 工具函数
-│   ├── graph.ts              # LangGraph 工作流图
-│   ├── state.ts              # LangGraph 状态定义
-│   └── nodes/                # LangGraph 节点函数
-├── components/ui/            # shadcn/ui 组件库
-├── lib/
-│   ├── utils.ts              # 工具函数
-│   └── storage.ts            # 对象存储工具
-└── hooks/                    # 自定义 Hooks
+│       ├── chat-agent/       # Conversational agent API (SSE)
+│       ├── studio/           # Authenticated managed job APIs
+│       ├── media/            # Expiring private media streaming
+│       └── ...               # Legacy provider routes (disabled in managed modes)
+├── agent/                    # Conversational agent and LangGraph workflow
+├── chatgpt/                  # MCP Apps embedded studio (English-only)
+├── studio/                   # Durable jobs, auth, storage, worker logic
+├── components/ui/            # shadcn/ui components
+├── lib/                      # Utilities and legacy object storage
+└── worker.ts                 # Separate pg-boss generation/FFmpeg worker
 ```
 
-## 技术架构
+## Architecture
 
-### Agent 架构
+- **Conversational agent** (`src/agent`): `doubao-seed-1-8-251228` orchestrates tool calls with SSE streaming; multimodal recognition, script generation, TTS (`zh_female_shuangkuaisisi_moon_bigtts`), Ark video generation and S3-compatible storage.
+- **Core tools**: `uploadAndIdentifyProduct`, `generateScripts`, `generateVideoSegments`, `composeFinalVideo`, `regenerateSegment`, `modifyScript`.
+- **Managed studio** (`src/studio`, `src/worker.ts`): PostgreSQL + pg-boss durable jobs, owner-scoped assets, private storage and the MCP server.
 
-项目采用**问答式 Agent**架构，基于 LangGraph 工作流：
+## Development conventions
 
-- **LLM调度**：使用 `doubao-seed-1-8-251228` 模型进行对话调度
-- **多模态识别**：商品图片识别使用多模态大模型
-- **工具调用**：支持图片上传、文案生成、视频生成、视频合成等工具
-- **SSE流式输出**：实时推送进度和结果
+- **pnpm only** (`pnpm install`, `pnpm add <pkg>`); npm and yarn are blocked by `preinstall`.
+- Prefer shadcn/ui components from `src/components/ui/`, Tailwind CSS v4 and Lucide icons.
+- TypeScript strict mode: no implicit `any`, typed parameters and returns, `@/` path alias.
 
-### 核心工具
+## Stack
 
-| 工具 | 功能 |
+| Area | Technology |
 |-----|------|
-| `uploadAndIdentifyProduct` | 上传图片并识别商品信息 |
-| `generateScripts` | 生成带货文案和画面Prompt |
-| `generateVideoSegments` | 生成视频片段（TTS+视频生成） |
-| `composeFinalVideo` | 合成最终视频（BGM+字幕） |
-| `regenerateSegment` | 重新生成单个视频片段 |
-| `modifyScript` | 修改文案内容 |
+| Framework | Next.js 16 (App Router) |
+| UI | React 19, shadcn/ui (Radix UI), Tailwind CSS v4, Lucide React |
+| Language | TypeScript 5 |
+| Workflow | LangGraph |
+| Jobs | PostgreSQL, pg-boss |
+| MCP | @modelcontextprotocol/server 2.x, @modelcontextprotocol/ext-apps |
+| Package manager | pnpm |
 
-### 依赖服务
-
-| 服务 | 用途 | 模型/配置 |
-|-----|------|---------|
-| 火山引擎 LLM | 对话调度 | `doubao-seed-1-8-251228` |
-| 火山引擎 多模态 | 商品识别 | 多模态模型 |
-| 火山引擎 TTS | 语音合成 | `zh_female_shuangkuaisisi_moon_bigtts` |
-| 火山引擎 视频生成 | 视频生成 | `ep-xxx` |
-| 火山引擎 对象存储 | 文件存储 | S3兼容存储 |
-
-## 开发规范
-
-### 包管理
-
-**必须使用 pnpm** 作为包管理器：
-
-```bash
-# ✅ 正确
-pnpm install
-pnpm add package-name
-
-# ❌ 禁止
-npm install
-yarn add
-```
-
-### UI 组件
-
-优先使用 `src/components/ui/` 中的 shadcn/ui 组件：
-
-```tsx
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-```
-
-### 样式开发
-
-使用 Tailwind CSS v4：
-
-```tsx
-<div className="flex items-center gap-4 p-4 rounded-lg">
-  <Button className="bg-primary text-white">提交</Button>
-</div>
-```
-
-### TypeScript 规范
-
-- 严格模式开发，禁止隐式 `any`
-- 所有函数参数和返回值必须标注类型
-- 使用 `@/` 路径别名导入模块
-
-## 技术栈
-
-| 类别 | 技术 |
-|-----|------|
-| 框架 | Next.js 16 (App Router) |
-| 核心 | React 19 |
-| 语言 | TypeScript 5 |
-| UI组件 | shadcn/ui (Radix UI) |
-| 样式 | Tailwind CSS v4 |
-| 图标 | Lucide React |
-| 工作流 | LangGraph |
-| 包管理 | pnpm |
-
-## 参考文档
+## Reference
 
 ### Durable job lifecycle
 
@@ -550,10 +397,8 @@ described as proof of consent. No live paid test was run here.
 - [LangGraph 文档](https://langchain-ai.github.io/langgraph/)
 - [火山引擎 API 文档](https://www.volcengine.com/docs)
 
-## 重要提示
+## Notes
 
-1. **必须配置正确的API密钥** 才能使用视频生成功能
-2. **必须使用 pnpm** 作为包管理器
-3. **优先使用 shadcn/ui 组件** 构建UI
-4. **遵循 Next.js App Router 规范** 开发
-5. **视频生成超时时间** 已设置为5分钟，支持较长的生成过程
+1. Live generation requires valid provider credentials; the managed studio additionally requires the production configuration above.
+2. Use pnpm only.
+3. Prefer shadcn/ui components and follow Next.js App Router conventions.

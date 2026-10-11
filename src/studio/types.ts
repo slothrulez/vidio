@@ -98,6 +98,7 @@ export const toolOutputSchema = z.object({
   message: z.string(),
   error: z.object({ code: z.string(), message: z.string() }).optional(),
   finalVideo: z.object({ assetId: z.uuid(), mimeType: z.literal("video/mp4") }).optional(),
+  consent: z.object({ token: z.uuid(), operation: z.string(), expiresAt: z.string() }).optional(),
 });
 export type ToolOutput = z.infer<typeof toolOutputSchema>;
 export const toolMetaSchema = z.object({

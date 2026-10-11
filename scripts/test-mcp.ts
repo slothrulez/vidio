@@ -106,10 +106,25 @@ async function main() {
   assert.equal(validationError.isError, true);
   checks++;
   async function run(operation: string, extra: Record<string, unknown> = {}) {
+    const paid: Record<string, string> = {
+      generate_segments: "start_video_job",
+      start_video_job: "start_video_job",
+      regenerate_segment: "regenerate_segment",
+      compose_video: "compose_final_video",
+      compose_final_video: "compose_final_video",
+    };
+    let consentToken: string | undefined;
+    if (paid[operation]) {
+      const grant = await call("grant_cost_consent", { projectId: project.id, revision: project.revision, operation: paid[operation] });
+      assert.ok(grant.data.consent?.token, "consent token issued");
+      checks++;
+      consentToken = grant.data.consent!.token;
+    }
     const queued = await call(operation, {
       projectId: project.id,
       revision: project.revision,
       confirmed: true,
+      ...(consentToken ? { consentToken } : {}),
       ...extra,
     });
     const job = queued.data.job!;
