@@ -9,10 +9,10 @@ deployment** until the launch gates below are closed. Nothing was published or d
 |---|---|---|
 | TypeScript + lint (errors) | `pnpm validate` | passed |
 | Full lint | `pnpm lint` | 0 errors, 50 pre-existing warnings (`<img>`, hooks deps, unused vars in legacy UI) |
-| Unit | `pnpm test:unit` | 23 passed |
+| Unit | `pnpm test:unit` | 26 passed |
 | Embedded UI | `pnpm test:ui` | 11 passed |
 | Branding | `pnpm test:branding` | 6 passed |
-| Integration (PostgreSQL, mocked S3/JWKS/provider, real FFmpeg) | `TEST_DATABASE_URL=postgresql://.../vidio_test pnpm test:integration` | 24 passed, incl. killed/restarted worker |
+| Integration (PostgreSQL, mocked S3/JWKS/provider, real FFmpeg) | `TEST_DATABASE_URL=postgresql://.../vidio_test pnpm test:integration` | 26 passed, incl. killed/restarted worker |
 | MCP protocol (running app + worker) | `pnpm test:mcp` / `pnpm test:mcp:identification` | 55 checks passed (deterministic; status polls are not counted) / passed |
 | Widget + production build | `pnpm build:widget` / `pnpm build` | passed |
 | Official MCP Apps host replay | manual, recorded | passed (see gaps) |
