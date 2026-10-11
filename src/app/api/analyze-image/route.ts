@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { LLMClient, Config, HeaderUtils } from 'coze-coding-dev-sdk';
 import type { Message } from 'coze-coding-dev-sdk';
+import { safeLogError } from '@/lib/log-redact';
 
 export async function POST(request: NextRequest) {
   try {
@@ -86,7 +87,7 @@ export async function POST(request: NextRequest) {
       features: analysisResult.features || ['高品质', '实用设计', '性价比高'],
     });
   } catch (error) {
-    console.error('图片分析失败:', error);
+    console.error('图片分析失败:', safeLogError(error));
     return NextResponse.json(
       { error: '图片分析失败，请重试' },
       { status: 500 }

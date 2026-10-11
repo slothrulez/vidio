@@ -5,12 +5,14 @@
 
 import { AgentStateType, Step, VideoSegment } from "../state";
 import fs from "fs";
+import axios from "axios";
 import path from "path";
 import { exec } from "child_process";
 import { promisify } from "util";
 import { TTSClient, VideoGenerationClient, Config, S3Storage } from "coze-coding-dev-sdk";
 import https from "https";
 import http from "http";
+import { safeLogError } from '@/lib/log-redact';
 
 const execAsync = promisify(exec);
 
@@ -147,7 +149,7 @@ async function generateSegment(
         });
         console.log(`[Agent] 片段 ${index + 1}: 图片上传成功`);
       } catch (uploadError) {
-        console.error(`[Agent] 片段 ${index + 1}: 图片上传失败，使用原始URL`, uploadError);
+        console.error(`[Agent] 片段 ${index + 1}: 图片上传失败，使用原始URL`, safeLogError(uploadError));
       }
     }
     
@@ -184,21 +186,19 @@ async function generateSegment(
       });
       
       try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        return await videoClient.videoGeneration(content as any, {
+        return await videoClient.videoGeneration(content as Parameters<VideoGenerationClient['videoGeneration']>[0], {
           model: VIDEO_MODEL_EP,
           duration: videoDuration,
           ratio: '16:9',
           resolution: '720p',
           generateAudio: false,
           watermark: false,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        } as any);
-      } catch (err: any) {
+        });
+      } catch (err: unknown) {
         console.error(`[Agent] 片段 ${index + 1}: 视频生成错误详情`, {
-          message: err.message,
-          statusCode: err.statusCode,
-          response: err.response?.data || err.response?.body || 'no response data',
+          message: err instanceof Error ? err.message : String(err),
+          statusCode: err && typeof err === 'object' && 'statusCode' in err ? err.statusCode : undefined,
+          response: axios.isAxiosError(err) ? err.response?.data : 'no response data',
         });
         throw err;
       }
@@ -241,7 +241,7 @@ async function generateSegment(
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error(`[Agent] 片段 ${index + 1}: 生成失败`, error);
+    console.error(`[Agent] 片段 ${index + 1}: 生成失败`, safeLogError(error));
     
     return {
       id: segment.id,

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import NextImage from 'next/image';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
@@ -31,6 +32,7 @@ import {
   RectangleHorizontal,
 } from 'lucide-react';
 
+// Keep persisted keys stable so existing avatars and sessions survive rebranding.
 // 用户头像本地存储key
 const USER_AVATAR_STORAGE_KEY = 'huxiaoying_user_avatar';
 
@@ -471,15 +473,17 @@ function SessionSidebar({
 
   return (
     <div className="w-[260px] h-full bg-gradient-to-b from-[#F5E6D3] to-[#FFFFFF] flex flex-col border-r border-[#E5E5E5]">
-      {/* 货小影Logo区域 */}
+      {/* vidio Logo区域 */}
       <div className="p-4 flex items-center gap-3">
-        <img 
+        <NextImage
           src="/assets/agent-avatar.png" 
-          alt="货小影" 
+          alt="vidio"
+          width={48}
+          height={48}
           className="w-12 h-12 rounded-full object-cover border-2 border-[#D4C2F6] shadow-sm"
         />
         <div className="flex flex-col">
-          <span className="text-[#333333] font-semibold text-lg">货小影</span>
+          <span className="text-[#333333] font-semibold text-lg">vidio</span>
           <span className="text-[#666666] text-sm">带货视频智能助手</span>
         </div>
       </div>
@@ -1176,7 +1180,7 @@ export default function ChatAgentPage() {
       messages: [{
         id: 'welcome',
         role: 'assistant',
-        content: '您好！我是「货小影」，您的专业带货视频智能助手。\n\n我可以帮您：\n1. 上传商品图片，自动识别商品和卖点\n2. 分段创作口播文案与画面提示词\n3. 生成带货视频片段\n4. 合成成片\n\n请上传您的商品图片或描述，开始创作吧！',
+        content: '您好！我是「vidio」，您的专业带货视频智能助手。\n\n我可以帮您：\n1. 上传商品图片，自动识别商品和卖点\n2. 分段创作口播文案与画面提示词\n3. 生成带货视频片段\n4. 合成成片\n\n请上传您的商品图片或描述，开始创作吧！',
         timestamp: new Date().toISOString(),
       }],
       state: {},
@@ -1282,7 +1286,7 @@ export default function ChatAgentPage() {
       messages: [{
         id: 'welcome',
         role: 'assistant',
-        content: '您好！我是「货小影」，您的专业带货视频智能助手。\n\n我可以帮您：\n1. 上传商品图片，自动识别商品和卖点\n2. 分段创作口播文案与画面提示词\n3. 生成带货视频片段\n4. 合成成片\n\n请上传您的商品图片或描述，开始创作吧！',
+        content: '您好！我是「vidio」，您的专业带货视频智能助手。\n\n我可以帮您：\n1. 上传商品图片，自动识别商品和卖点\n2. 分段创作口播文案与画面提示词\n3. 生成带货视频片段\n4. 合成成片\n\n请上传您的商品图片或描述，开始创作吧！',
         timestamp: new Date().toISOString(),
       }],
       state: {},
@@ -2426,7 +2430,7 @@ export default function ChatAgentPage() {
                     const blobUrl = window.URL.createObjectURL(blob);
                     const link = document.createElement('a');
                     link.href = blobUrl;
-                    link.download = `货小影_${new Date().toISOString().slice(0,10)}.mp4`;
+                    link.download = `vidio_${new Date().toISOString().slice(0,10)}.mp4`;
                     document.body.appendChild(link);
                     link.click();
                     document.body.removeChild(link);
@@ -2802,9 +2806,11 @@ export default function ChatAgentPage() {
       <div key={message.id} className="flex justify-start items-start gap-2 mb-3">
         {/* Agent头像 - 仅纯文本消息显示 */}
         {isPlainText && (
-          <img 
+          <NextImage
             src="/assets/agent-avatar.png" 
-            alt="货小影" 
+            alt="vidio"
+            width={32}
+            height={32}
             className="w-8 h-8 rounded-full object-cover shadow-sm shrink-0 ring-2 ring-white/50"
           />
         )}
@@ -2813,7 +2819,7 @@ export default function ChatAgentPage() {
           {/* Agent名称标签 - 仅纯文本消息显示 */}
           {isPlainText && (
             <div className="flex items-center gap-1.5 mb-1.5">
-              <span className="text-xs font-medium text-[#B999F3]">货小影</span>
+              <span className="text-xs font-medium text-[#B999F3]">vidio</span>
             </div>
           )}
           
@@ -2839,6 +2845,7 @@ export default function ChatAgentPage() {
     <>
       {/* 全屏背景 */}
       <div className="fixed inset-0 bg-[#F8F7F5]" />
+      <a href="/studio" className="fixed top-3 right-4 z-50 rounded-full bg-[#7543cf] px-4 py-2 text-xs font-medium text-white shadow-sm hover:bg-[#6332b8]">Open the safe studio demo →</a>
       
       {/* 左右分栏布局 */}
       <div 
@@ -2871,16 +2878,18 @@ export default function ChatAgentPage() {
         <div className="flex-1 flex flex-col" style={{ width: isCollapsed ? '100%' : 'calc(100% - 260px)' }}>
           {/* 顶部导航栏 - 固定56px */}
           <div className="h-[56px] bg-gradient-to-r from-[#F5E6D3] to-[#FFFFFF] flex items-center justify-between px-4 shrink-0 border-b border-[#E5E5E5]">
-            {/* 折叠时显示货小影logo */}
+            {/* 折叠时显示 vidio logo */}
             {isCollapsed && (
               <div className="flex items-center gap-3">
-                <img 
+                <NextImage
                   src="/assets/agent-avatar.png" 
-                  alt="货小影" 
+                  alt="vidio"
+                  width={48}
+                  height={48}
                   className="w-12 h-12 rounded-full object-cover border-2 border-[#D4C2F6] shadow-sm"
                 />
                 <div className="flex flex-col">
-                  <span className="text-[#333333] font-semibold text-lg">货小影</span>
+                  <span className="text-[#333333] font-semibold text-lg">vidio</span>
                   <span className="text-[#666666] text-sm">带货视频智能助手</span>
                 </div>
               </div>

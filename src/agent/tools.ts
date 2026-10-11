@@ -8,6 +8,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { execSync } from 'child_process';
 import { uploadFromRemoteUrl, uploadLocalFile } from '../lib/storage';
+import { parseRegenerationResult } from './transport';
+import { redactUrl, safeLogError } from '@/lib/log-redact';
 
 const getBaseUrl = () => {
   const domain = process.env.COZE_PROJECT_DOMAIN_DEFAULT;
@@ -49,7 +51,7 @@ async function downloadVideoToLocal(
   // 优先尝试转存到对象存储（生成可访问的签名 URL）
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
-      console.log(`[Tool] 尝试转存视频到对象存储 (尝试 ${attempt}/${retries}): ${videoUrl}`);
+      console.log(`[Tool] 尝试转存视频到对象存储 (尝试 ${attempt}/${retries}): ${redactUrl(videoUrl)}`);
       
       const result = await uploadFromRemoteUrl(
         videoUrl,
@@ -59,10 +61,10 @@ async function downloadVideoToLocal(
       );
       
       signedUrl = result.signedUrl;
-      console.log(`[Tool] 视频已转存到对象存储，签名URL: ${signedUrl}`);
+      console.log(`[Tool] 视频已转存到对象存储，签名URL: ${redactUrl(signedUrl)}`);
       break;
     } catch (error) {
-      console.error(`[Tool] 转存视频到对象存储失败 (尝试 ${attempt}):`, error instanceof Error ? error.message : error);
+      console.error(`[Tool] 转存视频到对象存储失败 (尝试 ${attempt}):`, safeLogError(error));
       if (attempt < retries) {
         await new Promise(resolve => setTimeout(resolve, 2000 * attempt));
       }
@@ -76,7 +78,7 @@ async function downloadVideoToLocal(
     
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
-        console.log(`[Tool] 下载视频到本地存储 (尝试 ${attempt}/${retries}): ${videoUrl}`);
+        console.log(`[Tool] 下载视频到本地存储 (尝试 ${attempt}/${retries}): ${redactUrl(videoUrl)}`);
         
         const response = await axios.get(videoUrl, {
           responseType: 'arraybuffer',
@@ -85,10 +87,10 @@ async function downloadVideoToLocal(
         
         fs.writeFileSync(filePath, Buffer.from(response.data));
         localPath = `/videos/${subDir}/${filename}`;
-        console.log(`[Tool] 视频已保存到本地: ${localPath}`);
+        console.log(`[Tool] 视频已保存到本地: [path]`);
         break;
       } catch (error) {
-        console.error(`[Tool] 下载视频到本地失败 (尝试 ${attempt}):`, error instanceof Error ? error.message : error);
+        console.error(`[Tool] 下载视频到本地失败 (尝试 ${attempt}):`, safeLogError(error));
         if (attempt < retries) {
           await new Promise(resolve => setTimeout(resolve, 2000 * attempt));
         }
@@ -97,7 +99,7 @@ async function downloadVideoToLocal(
   }
   
   if (!signedUrl && !localPath) {
-    console.error(`[Tool] 下载视频最终失败: ${videoUrl}`);
+    console.error(`[Tool] 下载视频最终失败: ${redactUrl(videoUrl)}`);
   }
   
   return { localPath, signedUrl };
@@ -148,9 +150,9 @@ export async function uploadAndIdentifyProduct(
   _productName?: string,
   customHeaders?: Record<string, string>
 ): Promise<ToolResult> {
-  console.log('[Tool] 调用 /api/identify-product，主图片:', imageUrl);
+  console.log('[Tool] 调用 /api/identify-product，主图片:', redactUrl(imageUrl));
   if (auxiliaryImages && auxiliaryImages.length > 0) {
-    console.log('[Tool] 辅助图片:', auxiliaryImages.join(', '));
+    console.log('[Tool] 辅助图片:', `${auxiliaryImages.length} image(s)`);
   }
   
   try {
@@ -171,8 +173,8 @@ export async function uploadAndIdentifyProduct(
           });
           imageBuffer = Buffer.from(imageResponse.data);
           break; // 成功则退出重试循环
-        } catch (retryError: any) {
-          if (retryError.code === 'ETIMEDOUT' || retryError.code === 'ECONNABORTED') {
+        } catch (retryError: unknown) {
+          if (axios.isAxiosError(retryError) && (retryError.code === 'ETIMEDOUT' || retryError.code === 'ECONNABORTED')) {
             console.warn(`[Tool] 图片下载超时，重试 ${retry + 1}/${maxRetries}`);
             if (retry < maxRetries - 1) {
               await new Promise(resolve => setTimeout(resolve, 2000)); // 等待2秒后重试
@@ -205,9 +207,9 @@ export async function uploadAndIdentifyProduct(
               const auxBuffer = Buffer.from(auxResponse.data);
               const auxFile = new File([new Uint8Array(auxBuffer)], `auxiliary_${i}.jpg`, { type: 'image/jpeg' });
               formData.append('auxiliaryImages', auxFile); // 辅助图片
-              console.log(`[Tool] 辅助图片${i + 1}已上传: ${auxUrl}`);
+              console.log(`[Tool] 辅助图片${i + 1}已上传: ${redactUrl(auxUrl)}`);
             } catch (auxError) {
-              console.warn(`[Tool] 辅助图片${i + 1}下载失败，跳过: ${auxUrl}`);
+              console.warn(`[Tool] 辅助图片${i + 1}下载失败，跳过: ${redactUrl(auxUrl)}`);
             }
           }
         }
@@ -244,7 +246,7 @@ export async function uploadAndIdentifyProduct(
       }
     };
   } catch (error) {
-    console.error('[Tool] identify-product 失败:', error);
+    console.error('[Tool] identify-product 失败:', safeLogError(error));
     return {
       success: false,
       message: '商品识别失败',
@@ -372,7 +374,7 @@ export async function generateScripts(
       }
     };
   } catch (error) {
-    console.error('[Tool] generate-script 失败:', error);
+    console.error('[Tool] generate-script 失败:', safeLogError(error));
     // 降级返回默认文案（根据语言选择）
     const lang = voiceLanguage || 'mandarin';
     const scripts = lang === 'english' ? [
@@ -446,7 +448,7 @@ export async function* generateVideoSegmentsStream(
     
     const decoder = new TextDecoder();
     let buffer = '';
-    const segments: Array<{ 
+    const segments: Array<{
       id: number; 
       script: string; 
       videoPath?: string; 
@@ -482,7 +484,7 @@ export async function* generateVideoSegmentsStream(
               const duration = data.content?.duration || data.duration;
               const scriptContent = data.content?.script || '';
               
-              console.log(`[Tool] 解析视频片段: segmentId=${segmentId}, videoUrl=${videoUrl?.substring(0, 100)}...`);
+              console.log(`[Tool] 解析视频片段: segmentId=${segmentId}, videoUrl=${redactUrl(videoUrl)}`);
               
               if (segmentId && videoUrl) {
                 // 下载视频到本地（优先转存到对象存储）
@@ -494,7 +496,7 @@ export async function* generateVideoSegmentsStream(
                   3
                 );
                 
-                console.log(`[Tool] 视频 ${segmentId} 下载完成: signedUrl=${signedUrl?.substring(0, 50)}...`);
+                console.log(`[Tool] 视频 ${segmentId} 下载完成: signedUrl=${redactUrl(signedUrl)}`);
                 
                 const segment = {
                   id: segmentId,
@@ -516,7 +518,7 @@ export async function* generateVideoSegmentsStream(
               console.log(`[Tool] generate-video完成事件`);
             }
           } catch (parseError) {
-            console.error(`[Tool] JSON解析错误: ${parseError}, line=${line}`);
+            console.error(`[Tool] JSON解析错误: ${safeLogError(parseError)}`);
           }
         }
       }
@@ -555,7 +557,7 @@ export async function* generateVideoSegmentsStream(
     
     // 输出调试日志
     segments.forEach((s, i) => {
-      console.log(`[Tool] 片段 ${i + 1}: id=${s.id}, videoUrl=${s.videoUrl?.substring(0, 80)}...`);
+      console.log(`[Tool] 片段 ${i + 1}: id=${s.id}, videoUrl=${redactUrl(s.videoUrl)}`);
     });
     
     // yield最终结果
@@ -573,7 +575,7 @@ export async function* generateVideoSegmentsStream(
     };
     
   } catch (error) {
-    console.error('[Tool] generate-video 失败:', error);
+    console.error('[Tool] generate-video 失败:', safeLogError(error));
     yield { 
       type: 'result', 
       data: {
@@ -646,7 +648,7 @@ export async function generateVideoSegments(
     
     const decoder = new TextDecoder();
     let buffer = '';
-    let segments: Array<{ 
+    const segments: Array<{
       id: number; 
       script: string; 
       videoPath?: string; 
@@ -682,7 +684,7 @@ export async function generateVideoSegments(
               const duration = data.content?.duration || data.duration;
               const scriptContent = data.content?.script || '';
               
-              console.log(`[Tool] 解析视频片段事件: segmentId=${segmentId}, videoUrl=${videoUrl?.substring(0, 100)}..., duration=${duration}`);
+              console.log(`[Tool] 解析视频片段事件: segmentId=${segmentId}, videoUrl=${redactUrl(videoUrl)}, duration=${duration}`);
               
               if (segmentId && videoUrl) {
                 // 下载视频到本地（优先转存到对象存储）
@@ -694,7 +696,7 @@ export async function generateVideoSegments(
                   3
                 );
                 
-                console.log(`[Tool] 视频片段 ${segmentId} 下载结果: signedUrl=${signedUrl?.substring(0, 50)}...`);
+                console.log(`[Tool] 视频片段 ${segmentId} 下载结果: signedUrl=${redactUrl(signedUrl)}`);
                 
                 const segment = {
                   id: segmentId,
@@ -718,7 +720,7 @@ export async function generateVideoSegments(
               console.log(`[Tool] generate-video完成事件`);
             }
           } catch (parseError) {
-            console.error(`[Tool] JSON解析错误: ${parseError}, line=${line}`);
+            console.error(`[Tool] JSON解析错误: ${safeLogError(parseError)}`);
           }
         }
       }
@@ -753,7 +755,7 @@ export async function generateVideoSegments(
     
     // 输出调试日志
     segments.forEach((s, i) => {
-      console.log(`[Tool] 片段 ${i + 1}: id=${s.id}, videoUrl=${s.videoUrl?.substring(0, 80)}..., localPath=${s.localVideoPath}`);
+      console.log(`[Tool] 片段 ${i + 1}: id=${s.id}, videoUrl=${redactUrl(s.videoUrl)}, localPath=[path]`);
     });
     
     return {
@@ -766,7 +768,7 @@ export async function generateVideoSegments(
       }
     };
   } catch (error) {
-    console.error('[Tool] generate-video 失败:', error);
+    console.error('[Tool] generate-video 失败:', safeLogError(error));
     // 返回脚本信息（稍后可重试）
     const segments = scripts.map(s => ({
       id: s.id,
@@ -814,7 +816,7 @@ export async function composeFinalVideo(
       fs.mkdirSync(tmpDir, { recursive: true });
     }
     
-    console.log(`[Tool] 创建临时目录: ${tmpDir}`);
+    console.log(`[Tool] 创建临时目录: [path]`);
     
     // 按 ID 排序确保合成顺序正确
     const sortedSegments = [...segments].sort((a, b) => (a.id || 0) - (b.id || 0));
@@ -830,7 +832,7 @@ export async function composeFinalVideo(
       // 下载视频
       const videoPath = path.join(tmpDir, `video_${segId}.mp4`);
       if (segment.videoUrl) {
-        console.log(`[Tool] 下载视频 ${segId}: ${segment.videoUrl.substring(0, 50)}...`);
+        console.log(`[Tool] 下载视频 ${segId}: ${redactUrl(segment.videoUrl)}`);
         const videoResponse = await axios.get(segment.videoUrl, { 
           responseType: 'arraybuffer',
           timeout: 60000,
@@ -846,7 +848,7 @@ export async function composeFinalVideo(
       // 下载音频（如果有）
       const audioPath = path.join(tmpDir, `audio_${segId}.mp3`);
       if (segment.audioUrl) {
-        console.log(`[Tool] 下载音频 ${segId}: ${segment.audioUrl.substring(0, 50)}...`);
+        console.log(`[Tool] 下载音频 ${segId}: ${redactUrl(segment.audioUrl)}`);
         const audioResponse = await axios.get(segment.audioUrl, { 
           responseType: 'arraybuffer',
           timeout: 60000,
@@ -927,7 +929,7 @@ export async function composeFinalVideo(
     console.log(`[Tool] FFmpeg拼接视频（分段已有字幕，无需再添加）...`);
     const concatCmd = `ffmpeg -y -f concat -safe 0 -i "${listPath}" -c copy "${finalPath}"`;
     execSync(concatCmd, { stdio: 'pipe', timeout: 60000 });
-    console.log(`[Tool] 视频拼接完成: ${finalPath}`);
+    console.log(`[Tool] 视频拼接完成: [path]`);
     
     // 获取最终视频时长
     const durationCmd = `ffprobe -v quiet -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${finalPath}"`;
@@ -944,7 +946,7 @@ export async function composeFinalVideo(
     const uploadResult = await uploadLocalFile(fileContent, filename, 'video/mp4');
     const signedVideoUrl = uploadResult.signedUrl;
     
-    console.log(`[Tool] 最终视频上传完成: ${signedVideoUrl?.substring(0, 80)}...`);
+    console.log(`[Tool] 最终视频上传完成: ${redactUrl(signedVideoUrl)}`);
     
     // 清理临时文件
     try {
@@ -966,7 +968,7 @@ export async function composeFinalVideo(
       }
     };
   } catch (error) {
-    console.error('[Tool] composeFinalVideo 失败:', error);
+    console.error('[Tool] composeFinalVideo 失败:', safeLogError(error));
     
     // 清理临时文件
     try {
@@ -1034,7 +1036,7 @@ export async function regenerateSegment(
         segmentId,
         script,
         prompt,
-        productImageUrl,
+        imageUrl: productImageUrl,
         productName,
         folderPath
       },
@@ -1043,26 +1045,21 @@ export async function regenerateSegment(
           ...customHeaders,
           'Content-Type': 'application/json'
         },
-        timeout: 300000 // 5 分钟超时
+        timeout: 300000, // 5 分钟超时
+        responseType: 'text'
       }
     );
     
-    const result = response.data;
+    const segment = parseRegenerationResult(response.data, segmentId, script);
     return {
       success: true,
       message: `片段 ${segmentId} 重新生成完成`,
       data: {
-        segment: {
-          id: segmentId,
-          script,
-          videoPath: result.videoPath,
-          audioPath: result.audioPath,
-          videoUrl: result.videoUrl
-        }
+        segment
       }
     };
   } catch (error) {
-    console.error('[Tool] regenerate 失败:', error);
+    console.error('[Tool] regenerate 失败:', safeLogError(error));
     return {
       success: false,
       message: `片段 ${segmentId} 重新生成失败`,
@@ -1106,7 +1103,7 @@ export async function uploadImage(
       }
     };
   } catch (error) {
-    console.error('[Tool] upload-image 失败:', error);
+    console.error('[Tool] upload-image 失败:', safeLogError(error));
     return {
       success: false,
       message: '图片上传失败',

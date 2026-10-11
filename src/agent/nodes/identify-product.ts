@@ -5,6 +5,7 @@
 
 import { AgentStateType, Step } from "../state";
 import { LLMClient, Config, Message } from "coze-coding-dev-sdk";
+import { safeLogError } from '@/lib/log-redact';
 
 export async function identifyProductNode(state: AgentStateType): Promise<Partial<AgentStateType>> {
   console.log("[Agent] 商品识别节点开始执行");
@@ -79,7 +80,7 @@ export async function identifyProductNode(state: AgentStateType): Promise<Partia
       currentStep: Step.IDENTIFY_PRODUCT,
     };
   } catch (error) {
-    console.error("[Agent] 商品识别失败:", error);
+    console.error("[Agent] 商品识别失败:", safeLogError(error));
     return {
       errors: [...state.errors, `商品识别失败: ${error}`],
       currentStep: Step.ERROR,

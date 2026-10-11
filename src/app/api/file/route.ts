@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import { safeLogError } from '@/lib/log-redact';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -54,7 +55,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('文件访问错误:', error);
+    console.error('文件访问错误:', safeLogError(error));
     return NextResponse.json({ error: '文件访问失败' }, { status: 500 });
   }
 }

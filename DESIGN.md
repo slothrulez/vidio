@@ -1,43 +1,46 @@
-# DESIGN.md
+# vidio design guide
 
-## 项目与用户画像
-AI商家带货视频生成工具，面向电商商家、带货主播，提供一键生成带货短视频的能力。
+## Product and audience
+vidio is an AI product-video creation tool for e-commerce sellers and creators: upload product images, get selling points and a script, generate scenes and compose a finished short video.
 
-## 品牌与视觉方向
-- **风格关键词**：简约、柔和、现代、专业
-- **主色调**：淡紫色系（柔和、信任感）
-- **整体风格**：浅色系、米白色背景、柔和的紫色点缀
+## Brand and visual direction
+- **Name**: vidio, always lowercase, never translated or capitalised.
+- **Logo**: original geometric "V" mark with the lowercase vidio wordmark; no legacy mascot or third-party platform logos.
+- **Assets**: [wordmark](public/assets/vidio-logo.svg), [icon](public/assets/vidio-icon.svg); favicon, app icons and the social image live in `src/app/`.
+- **Compatibility**: branding changes never alter existing APIs, environment variable names, browser-persisted data or media paths.
+- **Keywords**: minimal, soft, modern, professional.
+- **Primary palette**: soft lavender (calm, trustworthy).
+- **Overall style**: light theme, off-white background, restrained purple accents.
 
-## Design Tokens
+## Design tokens
 
-### 色彩
-- **背景色**：#F8F7F5（浅米白色）
-- **主色调**：#D4C2F6（淡紫色）
-- **按钮主色**：#B999F3（紫色按钮）
-- **辅助色**：#7A7A7A（深灰色图标）
-- **选中背景**：#ECE6F7（淡紫色浅色调）
-- **卡片背景**：#F1F3F5（浅灰白色）
-- **输入框背景**：#FFFFFF（白色），边框#E5E5E5
+### Colours
+- Background: #F8F7F5 (off-white)
+- Primary: #D4C2F6 (soft lavender)
+- Primary button: #B999F3 (purple)
+- Secondary: #7A7A7A (dark grey icons)
+- Selected background: #ECE6F7 (light lavender tint)
+- Card background: #F1F3F5 (light grey-white)
+- Input background: #FFFFFF with #E5E5E5 border
 
-### 文字颜色
-- **标题文字**：#333333（深灰色）
-- **辅助文字**：#666666（中灰色）
-- **时间/次要文字**：#999999（浅灰色）
+### Text colours
+- Headings: #333333
+- Secondary text: #666666
+- Timestamps / tertiary text: #999999
 
-### 字体
-- 字体族：系统默认字体栈
+### Typography
+- System default font stack.
 
-### 布局与响应式
-- 最大宽度：`max-w-4xl`
-- 内边距：`px-4 py-8`
-- 间距：使用Tailwind的间距系统（gap-2, gap-4等）
+### Layout and responsiveness
+- Max width: `max-w-4xl`
+- Padding: `px-4 py-8`
+- Spacing: Tailwind spacing scale (gap-2, gap-4, …)
 
-### 组件规范
-- 卡片：浅灰白色背景（#F1F3F5）
-- 按钮：淡紫色填充（#D4C2F6或#B999F3），深灰色文字
-- 输入框：白色背景，浅灰色边框，圆角
-- 侧边栏选中项：淡紫色浅色调背景（#ECE6F7）
+### Components
+- Cards: light grey-white background (#F1F3F5)
+- Buttons: lavender fill (#D4C2F6 or #B999F3) with dark grey text
+- Inputs: white background, light grey border, rounded corners
+- Selected sidebar item: light lavender tint (#ECE6F7)
 
-### 图标
-- 使用 Lucide React 图标库
-- 主要图标：Video, Upload, Sparkles, FileText, Download, Loader2, CheckCircle2, Circle
+### Icons
+- Lucide React icon set.

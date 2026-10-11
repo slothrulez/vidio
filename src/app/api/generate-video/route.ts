@@ -9,6 +9,7 @@ import * as http from 'http';
 import * as https from 'https';
 import { HeaderUtils } from 'coze-coding-dev-sdk';
 import { spawn, execSync } from 'child_process';
+import { redactUrl, safeLogError } from '@/lib/log-redact';
 
 // Types
 interface ScriptSegment {
@@ -287,14 +288,16 @@ async function generateVideoWithTaskCache(
   // Create new task promise
   const taskPromise = (async (): Promise<{ videoUrl: string; taskId: string }> => {
     const backoffDelays = [2000, 4000, 8000]; // 2s, 4s, 8s
-    let lastTaskId: string | null = null;
+    const lastTaskId: string | null = null;
     
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
         console.log(`第 ${segmentIndex + 1} 段视频生成开始（尝试 ${attempt + 1}/${maxRetries + 1}）...`);
         
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const videoResponse = await videoClient.videoGeneration(content as any, options as any);
+        const videoResponse = await videoClient.videoGeneration(
+          content as Parameters<VideoGenerationClient['videoGeneration']>[0],
+          options as Parameters<VideoGenerationClient['videoGeneration']>[1]
+        );
         
         if (!videoResponse.videoUrl) {
           throw new Error('未返回视频URL');
@@ -318,7 +321,7 @@ async function generateVideoWithTaskCache(
           content: JSON.stringify(content),
           options: JSON.stringify(options),
         };
-        console.error(`第 ${segmentIndex + 1} 段视频生成失败详情:`, JSON.stringify(errorDetails, null, 2));
+        console.error(`第 ${segmentIndex + 1} 段视频生成失败详情:`, safeLogError(errorDetails));
         
         const is429Error = error instanceof Error && 
           (error.message.includes('429') || 
@@ -411,9 +414,9 @@ export async function POST(request: NextRequest) {
       });
       
       imageUrl = await storage.generatePresignedUrl({ key: imageKey, expireTime: 86400 });
-      console.log('商品图片上传成功:', imageUrl);
+      console.log('商品图片上传成功:', redactUrl(imageUrl));
     } catch (error) {
-      console.error('商品图片上传失败:', error);
+      console.error('商品图片上传失败:', safeLogError(error));
     }
   }
 
@@ -537,7 +540,7 @@ export async function POST(request: NextRequest) {
                 realDuration = await getAudioDurationFFmpeg(localAudioPath);
                 console.log(`[TTS ${i + 1}] FFmpeg获取真实时长: ${realDuration}秒`);
               } catch (ffmpegError) {
-                console.warn(`[TTS ${i + 1}] FFmpeg获取时长失败，使用估算值:`, ffmpegError);
+                console.warn(`[TTS ${i + 1}] FFmpeg获取时长失败，使用估算值:`, safeLogError(ffmpegError));
                 // Fallback to estimation
                 const charCount = segment.script.length;
                 realDuration = Math.max(5, Math.min(15, Math.ceil(charCount / 4)));
@@ -558,7 +561,7 @@ export async function POST(request: NextRequest) {
               throw new Error('TTS未返回音频URL');
             }
           } catch (ttsError) {
-            console.error(`[TTS ${i + 1}] 生成失败:`, ttsError);
+            console.error(`[TTS ${i + 1}] 生成失败:`, safeLogError(ttsError));
             // Use default duration if TTS fails
             return {
               index: i,
@@ -767,7 +770,7 @@ export async function POST(request: NextRequest) {
               const videoFileName = `video_${segmentId}_${Date.now()}.mp4`;
               const localVideoPath = `/tmp/${videoFileName}`;
               
-              console.log(`下载视频到本地: ${localVideoPath}`);
+              console.log(`下载视频到本地: [path]`);
               await downloadFile(info.videoUrl, localVideoPath);
               
               // Get local audio path from audioInfos
@@ -792,14 +795,14 @@ export async function POST(request: NextRequest) {
                   console.log(`音频文件详情: ${audioProbeOutput}`);
                 }
               } catch (audioProbeError) {
-                console.error(`[验证] FFprobe检查音频文件失败:`, audioProbeError);
+                console.error(`[验证] FFprobe检查音频文件失败:`, safeLogError(audioProbeError));
               }
               
               // Use FFmpeg to merge audio and video
               const mergedFileName = `merged_${segmentId}_${Date.now()}.mp4`;
               const mergedFilePath = `/tmp/${mergedFileName}`;
               
-              console.log(`FFmpeg合并音视频: ${mergedFilePath}`);
+              console.log(`FFmpeg合并音视频: [path]`);
               await mergeVideoAudioFFmpeg(localVideoPath, localAudioPath, mergedFilePath);
               
               // Get actual video duration after merge using FFmpeg
@@ -820,7 +823,7 @@ export async function POST(request: NextRequest) {
               const subtitleFileName = `subtitle_${segmentId}_${Date.now()}.mp4`;
               const subtitleFilePath = `/tmp/${subtitleFileName}`;
               
-              console.log(`FFmpeg添加字幕: ${subtitleFilePath}, 视频比例: ${ratio}`);
+              console.log(`FFmpeg添加字幕: [path], 视频比例: ${ratio}`);
               await addSubtitleToSegmentVideo(mergedFilePath, subtitleFilePath, info.script || '', actualVideoDuration, ratio);
               
               // Upload video with subtitle to object storage
@@ -851,7 +854,7 @@ export async function POST(request: NextRequest) {
                   console.error(`[警告] 视频片段 ${i + 1} 缺少音频轨道!`);
                 }
               } catch (probeError) {
-                console.error(`[验证] FFprobe检查音频轨道失败:`, probeError);
+                console.error(`[验证] FFprobe检查音频轨道失败:`, safeLogError(probeError));
               }
               
               // Clean up temp files (验证完成后再删除)
@@ -860,7 +863,7 @@ export async function POST(request: NextRequest) {
               fs.unlinkSync(subtitleFilePath);
               
               // 发送segment_video事件，使用带字幕的视频URL（已包含音频和字幕）
-              console.log(`[API] 发送segment_video事件: segmentId=${segmentId}, videoUrl=${finalVideoUrl?.substring(0, 50)}...`);
+              console.log(`[API] 发送segment_video事件: segmentId=${segmentId}, videoUrl=${redactUrl(finalVideoUrl)}`);
               sendEvent(controller, {
                 type: 'segment_video',
                 content: { 
@@ -876,7 +879,7 @@ export async function POST(request: NextRequest) {
               });
               
             } catch (mergeError) {
-              console.error(`FFmpeg音频合并失败 (${i + 1}):`, mergeError);
+              console.error(`FFmpeg音频合并失败 (${i + 1}):`, safeLogError(mergeError));
               // Fallback to original video URL and duration
               mergedVideoUrls.push(info.videoUrl);
               mergedDurations.push(info.videoDuration);
@@ -948,7 +951,7 @@ export async function POST(request: NextRequest) {
             accessibleVideoUrls.push(accessibleUrl);
             console.log(`视频 ${i + 1} 转存成功`);
           } catch (transferError) {
-            console.error(`视频 ${i + 1} 转存失败:`, transferError);
+            console.error(`视频 ${i + 1} 转存失败:`, safeLogError(transferError));
             // Return individual segments on failure
             // Use audioDuration for subtitle timing
             const subtitles = segmentVideoInfos.map((info, idx) => {
@@ -1114,10 +1117,10 @@ export async function POST(request: NextRequest) {
           
           if (signedVideoUrl) {
             finalVideoUrl = signedVideoUrl;
-            console.log('视频转存成功，使用签名URL:', signedVideoUrl.substring(0, 50) + '...');
+            console.log('视频转存成功，使用签名URL:', redactUrl(signedVideoUrl));
           }
         } catch (transferError) {
-          console.error('视频转存失败:', transferError);
+          console.error('视频转存失败:', safeLogError(transferError));
           // 继续使用原始URL
         }
 
@@ -1136,7 +1139,7 @@ export async function POST(request: NextRequest) {
               console.log('字幕添加成功');
             }
           } catch (subtitleError) {
-            console.error('字幕添加失败:', subtitleError);
+            console.error('字幕添加失败:', safeLogError(subtitleError));
             // 继续使用无字幕的视频URL
           }
         } else {
@@ -1167,7 +1170,7 @@ export async function POST(request: NextRequest) {
 
         controller.close();
       } catch (error) {
-        console.error('视频生成失败:', error);
+        console.error('视频生成失败:', safeLogError(error));
         sendEvent(controller, {
           type: 'error',
           content: error instanceof Error ? error.message : '未知错误',

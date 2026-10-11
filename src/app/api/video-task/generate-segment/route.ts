@@ -5,6 +5,7 @@ import fs from 'fs';
 import path from 'path';
 import https from 'https';
 import http from 'http';
+import { redactUrl, safeLogError } from '@/lib/log-redact';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -188,9 +189,9 @@ export async function POST(request: NextRequest) {
               key: imageKey,
               expireTime: 3600,
             });
-            console.log('图片上传成功:', accessibleImageUrl.substring(0, 100) + '...');
+            console.log('图片上传成功:', redactUrl(accessibleImageUrl));
           } catch (uploadError) {
-            console.error('图片上传失败，使用原始URL:', uploadError);
+            console.error('图片上传失败，使用原始URL:', safeLogError(uploadError));
           }
         }
 
@@ -216,15 +217,14 @@ export async function POST(request: NextRequest) {
           watermark: false,
         }}, null, 2));
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const videoResponse = await videoClient.videoGeneration(content as any, {
+        const videoResponse = await videoClient.videoGeneration(content as Parameters<VideoGenerationClient['videoGeneration']>[0], {
           model: videoModelEP,
           duration: videoDuration,
           ratio: '16:9',
           resolution: '720p',
           generateAudio: false,
           watermark: false,
-        } as any);
+        });
 
         if (!videoResponse.videoUrl) {
           throw new Error('视频生成失败');
@@ -263,14 +263,14 @@ export async function POST(request: NextRequest) {
 
         controller.close();
       } catch (error) {
-        console.error('生成失败:', error);
+        console.error('生成失败:', safeLogError(error));
         if (error instanceof Error) {
-          console.error('错误详情:', error.message, error.stack);
+          console.error('错误详情:', safeLogError(error));
         }
         // 尝试从错误中提取更多信息
         const errorObj = error as { response?: { data?: unknown; status?: number } };
         if (errorObj.response) {
-          console.error('响应数据:', JSON.stringify(errorObj.response.data, null, 2));
+          console.error('响应数据:', safeLogError(errorObj.response.data));
           console.error('响应状态:', errorObj.response.status);
         }
         sendEvent(controller, {

@@ -5,6 +5,7 @@
 
 import { AgentStateType, Step } from "../state";
 import { LLMClient, Config, Message } from "coze-coding-dev-sdk";
+import { safeLogError } from '@/lib/log-redact';
 
 export async function generateScriptsNode(state: AgentStateType): Promise<Partial<AgentStateType>> {
   console.log("[Agent] 脚本生成节点开始执行");
@@ -107,7 +108,7 @@ ${sellingPoints}
       currentStep: Step.GENERATE_SCRIPTS,
     };
   } catch (error) {
-    console.error("[Agent] 脚本生成失败:", error);
+    console.error("[Agent] 脚本生成失败:", safeLogError(error));
     return {
       errors: [...state.errors, `脚本生成失败: ${error}`],
       currentStep: Step.ERROR,

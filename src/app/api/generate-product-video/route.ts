@@ -5,6 +5,7 @@ import {
   generateVideoSegments,
   composeFinalVideo,
 } from '@/agent/tools';
+import { redactUrl, safeLogError } from '@/lib/log-redact';
 
 /**
  * 外部API：一键生成商品带货视频
@@ -39,7 +40,7 @@ function generateSessionId(): string {
 }
 
 // 发送回调通知
-async function sendCallback(callbackUrl: string, data: any): Promise<void> {
+async function sendCallback(callbackUrl: string, data: unknown): Promise<void> {
   if (!callbackUrl) return;
   
   try {
@@ -55,7 +56,7 @@ async function sendCallback(callbackUrl: string, data: any): Promise<void> {
       console.log('[API] 回调通知发送成功');
     }
   } catch (error) {
-    console.error('[API] 回调通知发送失败:', error);
+    console.error('[API] 回调通知发送失败:', safeLogError(error));
   }
 }
 
@@ -86,11 +87,11 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    console.log(`[API] 参数: imageUrl=${imageUrl}, language=${language}, productName=${productName}`);
+    console.log(`[API] 参数: imageUrl=${redactUrl(imageUrl)}, language=${language}, productName=${productName}`);
     
     // Step 1: 商品识别
     console.log('[API] Step 1: 商品识别...');
-    const identifyResult = await uploadAndIdentifyProduct(imageUrl, productName);
+    const identifyResult = await uploadAndIdentifyProduct(imageUrl, undefined, productName);
     
     if (!identifyResult.success) {
       return NextResponse.json(
@@ -198,7 +199,7 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    console.log(`[API] 视频合成成功: finalVideoUrl=${finalVideoUrl}`);
+    console.log(`[API] 视频合成成功: finalVideoUrl=${redactUrl(finalVideoUrl)}`);
     
     // 计算总耗时
     const totalTime = Math.round((Date.now() - startTime) / 1000);
@@ -236,12 +237,12 @@ export async function POST(request: NextRequest) {
       data: responseData,
     });
     
-  } catch (error: any) {
-    console.error('[API] 处理请求失败:', error);
+  } catch (error: unknown) {
+    console.error('[API] 处理请求失败:', safeLogError(error));
     
     const errorResponse = {
       success: false,
-      error: error.message || '未知错误',
+      error: error instanceof Error ? error.message : '未知错误',
       sessionId,
     };
     
@@ -258,7 +259,7 @@ export async function POST(request: NextRequest) {
 // GET: 获取API使用说明
 export async function GET() {
   return NextResponse.json({
-    name: '货小影 - 商品带货视频生成API',
+    name: 'vidio - 商品带货视频生成API',
     version: '1.0.0',
     description: '一键生成商品带货视频的自动化API',
     endpoint: '/api/generate-product-video',

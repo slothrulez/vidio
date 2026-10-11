@@ -1,7 +1,9 @@
 import { NextRequest } from 'next/server';
+import axios from 'axios';
 import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
+import { safeLogError } from '@/lib/log-redact';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -134,7 +136,6 @@ export async function POST(request: NextRequest) {
         if (bgmUrl) {
           // 下载 BGM 文件
           const bgmPath = path.join(outputDir, 'bgm.mp3');
-          const axios = require('axios');
           const bgmResponse = await axios.get(bgmUrl, { responseType: 'arraybuffer' });
           fs.writeFileSync(bgmPath, bgmResponse.data);
           
@@ -168,7 +169,7 @@ export async function POST(request: NextRequest) {
 
         controller.close();
       } catch (error) {
-        console.error('合成失败:', error);
+        console.error('合成失败:', safeLogError(error));
         sendEvent(controller, {
           type: 'error',
           content: error instanceof Error ? error.message : '合成失败',

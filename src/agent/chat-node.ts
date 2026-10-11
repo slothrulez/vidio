@@ -12,15 +12,16 @@ import {
   ToolResult
 } from "./tools";
 import type { ChatAgentState, AgentSSEMessage } from "./chat-state";
+import { redactUrl } from '@/lib/log-redact';
 
 // 系统提示词 - 定义 Agent 的角色和能力
-const SYSTEM_PROMPT = `你是专业的商家带货视频智能助手【货小影】，专注为商家全自动生成问答式带货短视频。
+const SYSTEM_PROMPT = `你是专业的商家带货视频智能助手【vidio】，专注为商家全自动生成问答式带货短视频。
 
 ## 你的核心能力
 接收用户上传的商品图片、视频或文字描述，智能提取商品名称与核心卖点；分段创作口播文案与对应视频画面提示词，文案与画面一一匹配；协助完成TTS配音、AI视频生成、音视频混剪、片段重制、成片合成，同时自动生成字幕并搭配背景音乐。
 
 ## 交互规则（必须严格遵守）
-1. 自我介绍统一称呼自己为「货小影」，语气亲切、专业，贴合短视频带货场景；
+1. 自我介绍统一称呼自己为「vidio」，语气亲切、专业，贴合短视频带货场景；
 2. 引导用户完成全流程操作：素材上传、文案确认、片段预览、单片段重生成、自选片段合成成片；
 3. 熟悉整套视频生产逻辑，主动告知当前所处流程阶段，遇到资源访问、生成异常等问题及时友好提示用户；
 4. 支持用户修改文案、单独重新生成某一段视频片段、调整字幕与背景音乐配置；
@@ -299,13 +300,12 @@ export async function* chatNodeStream(
   // 提取消息内容为字符串
   let lastUserMessageContent = '';
   if (lastUserMessage) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const content: any = lastUserMessage.content;
+    const content: unknown = lastUserMessage.content;
     if (typeof content === 'string') {
       lastUserMessageContent = content;
     } else if (Array.isArray(content)) {
       lastUserMessageContent = content
-        .map((c: any) => typeof c === 'string' ? c : c.text || '')
+        .map((c: unknown) => typeof c === 'string' ? c : c && typeof c === 'object' && 'text' in c && typeof c.text === 'string' ? c.text : '')
         .join('');
     }
   }
@@ -413,7 +413,7 @@ export async function* chatNodeStream(
           // tools.ts yield的segment对象使用id字段，不是segmentId
           const segment = event.content as { id: number; segmentId?: number; videoUrl: string; duration?: number; script?: string };
           const actualSegmentId = segment.id || segment.segmentId;
-          console.log(`[Agent] yield segment_video事件: id=${actualSegmentId}, videoUrl=${segment.videoUrl?.substring(0, 50)}...`);
+          console.log(`[Agent] yield segment_video事件: id=${actualSegmentId}, videoUrl=${redactUrl(segment.videoUrl)}`);
           yield {
             type: "segment_video",
             content: {
@@ -474,7 +474,7 @@ export async function* chatNodeStream(
         
         console.log(`[Agent] 最终segments数量: ${finalSegments.length}`);
         finalSegments.forEach((seg, i) => {
-          console.log(`[Agent] segment ${i+1}: id=${seg.id}, videoUrl=${seg.videoUrl?.substring(0, 50)}..., hasVideo=${!!seg.videoUrl}`);
+          console.log(`[Agent] segment ${i+1}: id=${seg.id}, videoUrl=${redactUrl(seg.videoUrl)}, hasVideo=${!!seg.videoUrl}`);
         });
         
         currentState = {
@@ -487,7 +487,7 @@ export async function* chatNodeStream(
         console.log(`[Agent] yield state_update事件: segments=${finalSegments.length}个, stage=video_generated, 包含videoUrl`);
         // 输出完整的videoUrl确认不被截断
         finalSegments.forEach((seg, i) => {
-          console.log(`[Agent] state_update segment[${i}]完整videoUrl: ${seg.videoUrl}`);
+          console.log(`[Agent] state_update segment[${i}]完整videoUrl: ${redactUrl(seg.videoUrl)}`);
         });
         yield {
           type: "state_update",
