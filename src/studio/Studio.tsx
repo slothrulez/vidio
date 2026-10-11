@@ -584,7 +584,7 @@ export function Studio({
                       {project.name}
                     </p>
                     <p>
-                      {project.language === "english" ? "English" : project.language === "mandarin" ? "Mandarin (legacy)" : "Cantonese (legacy)"}{" "}
+                      English{" "}
                       · {project.ratio} · Revision {project.revision}
                     </p>
                   </div>

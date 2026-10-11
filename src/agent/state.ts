@@ -1,12 +1,12 @@
 /**
- * LangGraph Agent 状态定义
- * 用于管理视频生成流程的完整状态
+ * LangGraph agent state definition
+ * Holds the full state of the video generation flow
  */
 
 import { Annotation } from "@langchain/langgraph";
 
 /**
- * 视频片段状态
+ * Video segment state
  */
 export interface VideoSegment {
   id: number;
@@ -24,89 +24,89 @@ export interface VideoSegment {
 }
 
 /**
- * Agent 状态注解
- * 使用 LangGraph 的 Annotation API 定义状态
+ * Agent state annotation
+ * Defined with the LangGraph Annotation API
  */
 export const AgentState = Annotation.Root({
-  // ===== 输入信息 =====
-  /** 商品图片 URL（对象存储） */
+  // ===== Input =====
+  /** Product image URL (object storage) */
   productImageUrl: Annotation<string>,
   
-  /** 商品图片本地路径 */
+  /** Local product image path */
   productImageLocalPath: Annotation<string>,
   
-  /** 商品名称 */
+  /** Product name */
   productName: Annotation<string>,
   
-  /** 商品类型 */
+  /** Product type */
   productType: Annotation<string>,
   
-  /** 用户选择的材质 */
+  /** Materials chosen by the user */
   selectedMaterials: Annotation<string[]>,
   
-  /** 用户选择的特点 */
+  /** Features chosen by the user */
   selectedFeatures: Annotation<string[]>,
   
-  /** 自定义卖点 */
+  /** Custom selling points */
   customSellingPoints: Annotation<string[]>,
   
-  // ===== 工作目录 =====
-  /** 工作目录路径 */
+  // ===== Working directory =====
+  /** Working directory path */
   workDir: Annotation<string>,
   
-  /** 相对路径（用于前端访问） */
+  /** Relative path for frontend access */
   relativePath: Annotation<string>,
   
-  // ===== 生成的脚本 =====
-  /** 脚本片段列表 */
+  // ===== Generated scripts =====
+  /** Script segments */
   scripts: Annotation<string[]>,
   
-  /** 视频 Prompt 列表 */
+  /** Video prompts */
   prompts: Annotation<string[]>,
   
-  // ===== 视频片段 =====
-  /** 视频片段列表 */
+  // ===== Video segments =====
+  /** Video segments */
   segments: Annotation<VideoSegment[]>,
   
-  /** 当前正在生成的片段索引 */
+  /** Index of the segment being generated */
   currentSegmentIndex: Annotation<number>,
   
-  // ===== 最终视频 =====
-  /** 最终视频 URL */
+  // ===== Final video =====
+  /** Final video URL */
   finalVideoUrl: Annotation<string>,
   
-  /** 最终视频本地路径 */
+  /** Local final video path */
   finalVideoLocalPath: Annotation<string>,
   
-  /** 最终字幕列表 */
+  /** Final subtitles */
   finalSubtitles: Annotation<{ text: string; startTime: number; endTime: number }[]>,
   
-  // ===== 流程控制 =====
-  /** 当前步骤 */
+  // ===== Flow control =====
+  /** Current step */
   currentStep: Annotation<string>,
   
-  /** 错误信息 */
+  /** Errors */
   errors: Annotation<string[]>,
   
-  /** 是否完成 */
+  /** Whether the flow is complete */
   isComplete: Annotation<boolean>,
   
-  /** 任务 ID */
+  /** Task ID */
   taskId: Annotation<string>,
 });
 
 /**
- * 状态类型（用于类型推断）
+ * State type (for inference)
  */
 export type AgentStateType = typeof AgentState.State;
 
 /**
- * 更新状态类型
+ * State update type
  */
 export type AgentUpdateType = typeof AgentState.Update;
 
 /**
- * 流程步骤枚举
+ * Flow steps
  */
 export enum Step {
   INIT = "init",
@@ -119,7 +119,7 @@ export enum Step {
 }
 
 /**
- * SSE 事件类型
+ * SSE event types
  */
 export interface SSEEvent {
   type: "progress" | "error" | "complete" | "segment_update";

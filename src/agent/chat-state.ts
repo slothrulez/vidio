@@ -1,21 +1,21 @@
-// 问答式带货视频生成 Agent - 状态定义
+// Conversational product video agent state
 
-// Agent 状态接口
+// Agent state interface
 export interface ChatAgentState {
-  // 对话历史
+  // Chat history
   messages: Array<{ role: "user" | "assistant" | "system"; content: string }>;
   
-  // 商品图片（支持多图片：主图片 + 辅助图片）
-  productImageUrl?: string;  // 主图片URL（用于视频生成的主要参考）
-  auxiliaryImages?: string[];  // 辅助图片URL列表（用于补充信息）
+  // Product images (main image + supporting images)
+  productImageUrl?: string;  // main image URL (primary reference for video generation)
+  auxiliaryImages?: string[];  // supporting image URLs
   productName?: string;
   category?: string;
   features: string[];
   
-  // 文案信息（包含画面 Prompt）
+  // Scripts (with visual prompts)
   scripts: Array<{ id: number; script: string; feature: string; prompt?: string }>;
   
-  // 视频片段
+  // Video segments
   segments: Array<{
     id: number;
     script: string;
@@ -25,49 +25,49 @@ export interface ChatAgentState {
     audioUrl?: string;
     videoPath?: string;
     videoUrl?: string;
-    localVideoPath?: string;  // 本地视频路径
+    localVideoPath?: string;  // local video path
     duration: number;
   }>;
   
-  // 输出目录
+  // Output directory
   outputDir?: string;
   
-  // 最终视频
+  // Final video
   finalVideoUrl?: string;
   finalVideoPath?: string;
-  localVideoPath?: string;  // 本地最终视频路径
+  localVideoPath?: string;  // local final video path
   finalDuration?: number;
   subtitleUrl?: string;
   
-  // 配音语言
+  // Voiceover language (english)
   voiceLanguage?: string;
   
-  // 视频比例：'16:9'横版 或 '9:16'竖版
+  // Video ratio: '16:9' landscape or '9:16' portrait
   videoRatio?: string;
   
-  // 当前阶段（更细化的阶段划分）
+  // Current stage
   currentStage: "idle" | "identifying" | "product_identified" | "script_generated" | "video_generated" | "composing" | "done";
   
-  // 错误信息
+  // Errors
   error?: string;
 }
 
-// 工具结果类型
+// Tool result type
 export interface ToolResult {
   success: boolean;
   message: string;
   data?: Record<string, unknown>;
 }
 
-// Agent 消息类型（用于 SSE）
+// Agent message type (SSE)
 export interface AgentSSEMessage {
   type: "text" | "tool_call" | "tool_result" | "progress" | "state_update" | "wait_feedback" | "segment_video" | "complete" | "error" | "audio_merge";
-  content?: string | Record<string, unknown> | ChatAgentState;  // content改为可选
+  content?: string | Record<string, unknown> | ChatAgentState;  // content is optional
   data?: Record<string, unknown>;
   sessionId?: string;
 }
 
-// 默认状态
+// Default state
 export function getDefaultState(): ChatAgentState {
   return {
     messages: [],

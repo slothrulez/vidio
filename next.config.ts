@@ -6,7 +6,6 @@ const nextConfig: NextConfig = {
   },
   // outputFileTracingRoot: path.resolve(__dirname, '../../'),  // Uncomment and add 'import path from "path"' if needed
   /* config options here */
-  allowedDevOrigins: ['*.dev.coze.site'],
   images: {
     remotePatterns: [
       {
@@ -16,7 +15,7 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  // 指定turbopack根目录，消除多lockfile警告
+  // Pin the Turbopack root to silence the multi-lockfile warning
   turbopack: {
     root: __dirname,
   },

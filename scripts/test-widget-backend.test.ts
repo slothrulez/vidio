@@ -11,7 +11,6 @@ import { createProject, getProject, saveProject } from "../src/studio/store";
 import { executeDemo } from "../src/studio/demo";
 import { composeOwnedSegments, subtitleFiles } from "../src/studio/composition";
 import { readAsset, assetPath } from "../src/studio/assets";
-import { executeTool } from "../src/studio/service";
 import { toolOutputSchema, toolMetaSchema } from "../src/studio/types";
 const url = process.env.TEST_DATABASE_URL;
 if (!url || !new URL(url).pathname.endsWith("_test"))
@@ -157,33 +156,11 @@ test("Streamable HTTP uploads are app-only, owner-scoped, chunk-idempotent and f
     "image/png",
   );
 });
-test("MCP generation is English-only while historical website projects remain unchanged", async () => {
-  for (const language of ["mandarin", "cantonese"])
+test("MCP project creation is English-only", async () => {
+  for (const language of ["mandarin", "cantonese", "zh-CN"])
     assert.equal((await call("create_project", { language })).isError, true);
   const created = await call("create_project", { name: "English by default" });
   assert.equal(toolOutputSchema.parse(created.structuredContent).project!.language, "english");
-  const legacy = await createProject(owner, { name: "Historical story", language: "mandarin", ratio: "16:9" });
-  const input = { projectId: legacy.id, revision: legacy.revision, confirmed: true };
-  for (const name of ["identify_product", "generate_scripts", "start_video_job"])
-    assert.equal(toolOutputSchema.parse((await call(name, input)).structuredContent).error?.code, "LANGUAGE");
-  assert.equal(toolOutputSchema.parse((await call("compose_final_video", { ...input, segmentIds: [1] })).structuredContent).error?.code, "LANGUAGE");
-  for (const [name,args] of [
-    ["save_scripts",{projectId:legacy.id,revision:0,scripts:[{id:1,script:"Not saved",prompt:"Not saved"}]}],
-    ["update_script",{projectId:legacy.id,revision:0,id:1,script:"Not saved",prompt:"Not saved"}],
-    ["begin_image_upload",{projectId:legacy.id,revision:0,mime:"image/png",size:24}],
-  ] as const) assert.equal(toolOutputSchema.parse((await call(name,args)).structuredContent).error?.code,"LANGUAGE");
-  const pending=await executeTool(owner,"begin_image_upload",{projectId:legacy.id,revision:0,mime:"image/png",size:24});
-  const uploadId=pending._meta!.upload!.id;
-  for (const [name,args] of [
-    ["append_image_chunk",{uploadId,offset:0,data:Buffer.alloc(24).toString("base64")}],
-    ["finish_image_upload",{uploadId}],
-    ["abort_image_upload",{uploadId}],
-  ] as const) assert.equal(toolOutputSchema.parse((await call(name,args)).structuredContent).error?.code,"LANGUAGE");
-  assert.equal(Number((await database().query("SELECT octet_length(data) AS n FROM vidio_image_uploads WHERE id=$1",[uploadId])).rows[0].n),0);
-  const unchanged = await getProject(owner, legacy.id);
-  assert.equal(unchanged.language, "mandarin");
-  assert.equal(unchanged.revision, legacy.revision);
-  assert.equal(unchanged.activeJobId, undefined);
 });
 test("malformed, oversized, partial, expired and spoofed uploads fail without attaching an asset", async () => {
   const project = await createProject(owner, {

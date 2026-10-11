@@ -1,5 +1,5 @@
 /**
- * 重新生成单个视频片段 API
+ * Regenerate a single video segment
  */
 
 import { NextRequest } from "next/server";
@@ -14,7 +14,7 @@ import { safeLogError } from '@/lib/log-redact';
 
 const execAsync = promisify(exec);
 
-// 使用环境变量或默认配置
+// Environment or default configuration
 const COZE_API_KEY = process.env.COZE_API_KEY || "";
 const COZE_API_BASE_URL = process.env.COZE_API_BASE_URL || "https://api.coze.cn";
 const ARK_API_KEY = process.env.ARK_API_KEY || process.env.VIDEO_API_KEY || "";
@@ -25,9 +25,9 @@ export async function POST(request: NextRequest) {
   
   const { segmentId, script, prompt, imageUrl, folderPath } = body;
   
-  console.log(`[Regenerate API] 重新生成片段 ${segmentId}`);
+  console.log(`[Regenerate API] regenerating segment ${segmentId}`);
   
-  // 创建 SSE 流
+  // SSE stream
   const encoder = new TextEncoder();
   
   const stream = new ReadableStream({
@@ -37,9 +37,9 @@ export async function POST(request: NextRequest) {
       };
       
       try {
-        sendEvent("start", { segmentId, message: "开始重新生成" });
+        sendEvent("start", { segmentId, message: "Regeneration started" });
         
-        // 1. 生成 TTS (使用 SDK)
+        // 1. TTS via the SDK
         sendEvent("tts_start", { segmentId });
         
         const defaultConfig = new Config({ timeout: 300000 });
@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
         const ttsResponse = await ttsClient.synthesize({
           uid: `user_${Date.now()}_${segmentId}`,
           text: script,
-          speaker: 'zh_female_mizai_saturn_bigtts',
+          speaker: 'zh_female_vv_uranus_bigtts',
           audioFormat: 'mp3',
           speechRate: 0,
         });
@@ -64,17 +64,17 @@ export async function POST(request: NextRequest) {
           const audioFileName = `audio_${segmentId}_${Date.now()}.mp3`;
           audioPath = path.join(folderPath || '/tmp', "audio", audioFileName);
           
-          // 确保目录存在
+          // Ensure the directory exists
           const audioDir = path.dirname(audioPath);
           if (!fs.existsSync(audioDir)) {
             fs.mkdirSync(audioDir, { recursive: true });
           }
           
-          // 下载音频文件
+          // Download the audio
           const audioResponse = await axios.get(ttsResponse.audioUri, { responseType: 'arraybuffer' });
           fs.writeFileSync(audioPath, audioResponse.data);
           
-          // 获取音频时长
+          // Audio duration
           const { stdout } = await execAsync(
             `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${audioPath}"`
           );
@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
           duration: audioDuration,
         });
         
-        // 2. 生成视频 (使用 SDK)
+        // 2. Video via the SDK
         sendEvent("video_start", { segmentId });
         
         const videoGenConfig = ARK_API_KEY ? new Config({ 
@@ -116,15 +116,15 @@ export async function POST(request: NextRequest) {
         );
         
         if (!videoResponse.videoUrl) {
-          throw new Error("视频生成失败：未返回视频URL");
+          throw new Error("Video generation failed: no video URL returned");
         }
         
-        // 下载视频到本地
+        // Download the video
         const videoResponseData = await axios.get(videoResponse.videoUrl, { responseType: "arraybuffer" });
         const videoFileName = `video_${segmentId}_${Date.now()}.mp4`;
         const videoPath = path.join(folderPath || '/tmp', "video", videoFileName);
         
-        // 确保目录存在
+        // Ensure the directory exists
         const videoDir = path.dirname(videoPath);
         if (!fs.existsSync(videoDir)) {
           fs.mkdirSync(videoDir, { recursive: true });
@@ -139,7 +139,7 @@ export async function POST(request: NextRequest) {
           duration: audioDuration,
         });
         
-        // 3. 上传到对象存储
+        // 3. Upload to object storage
         const storage = new S3Storage();
         const videoBuffer = fs.readFileSync(videoPath);
         const uploadedVideoKey = await storage.uploadFile({
@@ -149,7 +149,7 @@ export async function POST(request: NextRequest) {
         });
         const uploadedVideoUrl = await storage.generatePresignedUrl({ key: uploadedVideoKey, expireTime: 86400 });
         
-        // 4. 完成
+        // 4. Done
         sendEvent("done", {
           segmentId,
           audio: {
@@ -165,7 +165,7 @@ export async function POST(request: NextRequest) {
         });
         
       } catch (error) {
-        console.error(`[Regenerate API] 错误:`, safeLogError(error));
+        console.error(`[Regenerate API] error:`, safeLogError(error));
         sendEvent("error", { segmentId, message: String(error) });
       }
       

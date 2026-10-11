@@ -1,17 +1,17 @@
 /**
- * Agent API 路由
- * 使用 SSE 流式输出，提供完整的视频生成流程
+ * Agent API route
+ * Streams the full video generation flow over SSE
  * 
- * 支持两种模式：
- * - mode: "full" - 完整流程（识别商品 → 生成脚本 → 生成视频 → 合成）
- * - mode: "video" - 仅生成视频（跳过识别和脚本生成，直接从传入的脚本生成视频）
+ * Two modes:
+ * - mode: "full" - full flow (identify product -> write script -> generate video -> compose)
+ * - mode: "video" - video only (skip identification and scripting; generate video from the given scripts)
  */
 
 import { NextRequest } from "next/server";
 import { videoAgent } from "@/agent";
 import { safeLogError } from '@/lib/log-redact';
 
-// 定义简化的事件数据类型
+// Simplified event data type
 interface EventData {
   productName: string;
   workDir: string;
@@ -38,30 +38,30 @@ interface EventData {
 export async function POST(request: NextRequest) {
   const body = await request.json();
   
-  console.log("[Agent API] 收到请求:", body);
+  console.log("[Agent API] request received:", body);
   
-  const mode = body.mode || "full"; // "full" 或 "video"
+  const mode = body.mode || "full"; // "full" or "video"
   
-  // 创建 SSE 流式响应
+  // SSE response
   const encoder = new TextEncoder();
   
   const stream = new ReadableStream({
     async start(controller) {
-      // 发送 SSE 事件的辅助函数
+      // SSE event helper
       const sendEvent = (event: string, data: Record<string, unknown>) => {
         const message = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
         controller.enqueue(encoder.encode(message));
       };
       
       try {
-        // 发送开始事件
+        // Start event
         sendEvent("start", {
-          message: `Agent 开始执行 (模式: ${mode})`,
+          message: `Agent started (mode: ${mode})`,
           mode,
           timestamp: Date.now(),
         });
         
-        // 准备输入状态
+        // Input state
         const input: Record<string, unknown> = {
           productImageUrl: body.productImageUrl || "",
           productImageLocalPath: body.productImageLocalPath || "",
@@ -72,12 +72,12 @@ export async function POST(request: NextRequest) {
           customSellingPoints: body.customSellingPoints || [],
         };
         
-        // 如果是 video 模式，需要传入已有的脚本和 Prompt
+        // Video mode needs existing scripts and prompts
         if (mode === "video") {
-          // 验证必要参数
+          // Validate required parameters
           if (!body.scripts || !Array.isArray(body.scripts) || body.scripts.length === 0) {
             sendEvent("error", {
-              message: "video 模式需要提供 scripts 数组",
+              message: "video mode requires a scripts array",
               timestamp: Date.now(),
             });
             controller.close();
@@ -85,12 +85,12 @@ export async function POST(request: NextRequest) {
           }
           
           input.scripts = body.scripts;
-          input.prompts = body.prompts || body.scripts; // 如果没有 prompts，使用 scripts 作为默认
+          input.prompts = body.prompts || body.scripts; // fall back to scripts when prompts are missing
           input.skipIdentify = true;
           input.skipScriptGeneration = true;
         }
         
-        // 使用流式执行
+        // Streaming run
         const generator = await videoAgent.streamExecute(input);
         
         const eventData: EventData = {
@@ -108,9 +108,9 @@ export async function POST(request: NextRequest) {
         for await (const chunk of generator) {
           const { node, state } = chunk;
           
-          console.log(`[Agent API] 节点 ${node} 完成`);
+          console.log(`[Agent API] node ${node} finished`);
           
-          // 更新事件数据
+          // Update event data
           eventData.productName = state.productName || eventData.productName;
           eventData.workDir = state.workDir || eventData.workDir;
           eventData.scripts = state.scripts || eventData.scripts;
@@ -136,29 +136,29 @@ export async function POST(request: NextRequest) {
           eventData.finalSubtitles = state.finalSubtitles || eventData.finalSubtitles;
           eventData.errors = state.errors || eventData.errors;
           
-          console.log(`[Agent API] 节点 ${node} 返回数据:`, safeLogError(state));
+          console.log(`[Agent API] node ${node} returned:`, safeLogError(state));
           
-          // 发送节点完成事件
+          // Node completion event
           sendEvent("node_complete", {
             node,
             step: state.currentStep || "",
-            message: `节点 ${node} 执行完成`,
+            message: `Node ${node} finished`,
             data: eventData,
             timestamp: Date.now(),
           });
         }
         
-        // 发送完成事件
+        // Completion event
         sendEvent("complete", {
-          message: "视频生成完成",
+          message: "Video generation complete",
           data: eventData,
           timestamp: Date.now(),
         });
         
       } catch (error) {
-        console.error("[Agent API] 执行错误:", safeLogError(error));
+        console.error("[Agent API] run error:", safeLogError(error));
         sendEvent("error", {
-          message: `执行失败: ${error}`,
+          message: `Run failed: ${error}`,
           timestamp: Date.now(),
         });
       }

@@ -8,16 +8,16 @@ import {
 import { redactUrl, safeLogError } from '@/lib/log-redact';
 
 /**
- * 外部API：一键生成商品带货视频
+ * External API: generate a product video in one call
  * 
  * POST /api/generate-product-video
  * 
  * Request Body:
  * {
- *   imageUrl: string;          // 商品图片URL（必填）
- *   language?: 'chinese' | 'english';  // 配音语言（可选，默认chinese）
- *   productName?: string;      // 商品名称（可选，自动识别）
- *   callbackUrl?: string;      // 回调URL（可选，完成后通知）
+ *   imageUrl: string;          // product image URL (required)
+ *   language?: 'english';      // voiceover language (English only)
+ *   productName?: string;      // product name (optional, identified automatically)
+ *   callbackUrl?: string;      // callback URL (optional, notified on completion)
  * }
  * 
  * Response:
@@ -34,12 +34,12 @@ import { redactUrl, safeLogError } from '@/lib/log-redact';
  * }
  */
 
-// 生成唯一的会话ID
+// Generate a unique session ID
 function generateSessionId(): string {
   return `api_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 }
 
-// 发送回调通知
+// Send the callback
 async function sendCallback(callbackUrl: string, data: unknown): Promise<void> {
   if (!callbackUrl) return;
   
@@ -51,12 +51,12 @@ async function sendCallback(callbackUrl: string, data: unknown): Promise<void> {
     });
     
     if (!response.ok) {
-      console.error(`[API] 回调通知失败: ${response.status}`);
+      console.error(`[API] callback failed: ${response.status}`);
     } else {
-      console.log('[API] 回调通知发送成功');
+      console.log('[API] callback sent');
     }
   } catch (error) {
-    console.error('[API] 回调通知发送失败:', safeLogError(error));
+    console.error('[API] callback send failed:', safeLogError(error));
   }
 }
 
@@ -64,38 +64,38 @@ export async function POST(request: NextRequest) {
   const startTime = Date.now();
   const sessionId = generateSessionId();
   
-  console.log(`[API] 开始处理外部API请求: sessionId=${sessionId}`);
+  console.log(`[API] handling external API request: sessionId=${sessionId}`);
   
   try {
-    // 解析请求体
+    // Parse the body
     const body = await request.json();
-    const { imageUrl, language = 'chinese', productName, callbackUrl } = body;
+    const { imageUrl, language = 'english', productName, callbackUrl } = body;
     
-    // 验证必填参数
+    // Validate required parameters
     if (!imageUrl) {
       return NextResponse.json(
-        { success: false, error: '缺少必填参数: imageUrl' },
+        { success: false, error: 'Missing required parameter: imageUrl' },
         { status: 400 }
       );
     }
     
-    // 验证imageUrl格式
+    // Validate the imageUrl format
     if (!imageUrl.startsWith('http://') && !imageUrl.startsWith('https://')) {
       return NextResponse.json(
-        { success: false, error: 'imageUrl必须是有效的HTTP/HTTPS URL' },
+        { success: false, error: 'imageUrl must be a valid HTTP/HTTPS URL' },
         { status: 400 }
       );
     }
     
-    console.log(`[API] 参数: imageUrl=${redactUrl(imageUrl)}, language=${language}, productName=${productName}`);
+    console.log(`[API] params: imageUrl=${redactUrl(imageUrl)}, language=${language}, productName=${productName}`);
     
-    // Step 1: 商品识别
-    console.log('[API] Step 1: 商品识别...');
+    // Step 1: identify the product
+    console.log('[API] Step 1: identifying the product...');
     const identifyResult = await uploadAndIdentifyProduct(imageUrl, undefined, productName);
     
     if (!identifyResult.success) {
       return NextResponse.json(
-        { success: false, error: `商品识别失败: ${identifyResult.error || identifyResult.message}` },
+        { success: false, error: `Product identification failed: ${identifyResult.error || identifyResult.message}` },
         { status: 500 }
       );
     }
@@ -104,15 +104,15 @@ export async function POST(request: NextRequest) {
     const features = identifyResult.data?.features as string[] || [];
     const productImageUrl = identifyResult.data?.imageUrl as string;
     
-    console.log(`[API] 商品识别成功: productName=${identifiedProductName}, features=${features.length}个`);
+    console.log(`[API] product identified: productName=${identifiedProductName}, features=${features.length}`);
     
-    // Step 2: 文案生成
-    console.log('[API] Step 2: 文案生成...');
+    // Step 2: write the script
+    console.log('[API] Step 2: writing the script...');
     const scriptsResult = await generateScripts(identifiedProductName, features, productImageUrl, language);
     
     if (!scriptsResult.success) {
       return NextResponse.json(
-        { success: false, error: `文案生成失败: ${scriptsResult.error || scriptsResult.message}` },
+        { success: false, error: `Script generation failed: ${scriptsResult.error || scriptsResult.message}` },
         { status: 500 }
       );
     }
@@ -121,17 +121,17 @@ export async function POST(request: NextRequest) {
     
     if (!scripts || scripts.length === 0) {
       return NextResponse.json(
-        { success: false, error: '文案生成返回空结果' },
+        { success: false, error: 'Script generation returned nothing' },
         { status: 500 }
       );
     }
     
-    console.log(`[API] 文案生成成功: ${scripts.length}个分镜`);
+    console.log(`[API] script ready: ${scripts.length} scenes`);
     
-    // Step 3: 分段视频生成
-    console.log('[API] Step 3: 分段视频生成...');
+    // Step 3: generate video segments
+    console.log('[API] Step 3: generating video segments...');
     
-    // 构造segments输入
+    // Build the segments input
     const segmentsInput = scripts.map(s => ({
       id: s.id,
       script: s.script,
@@ -146,7 +146,7 @@ export async function POST(request: NextRequest) {
     
     if (!videoResult.success) {
       return NextResponse.json(
-        { success: false, error: `分段视频生成失败: ${videoResult.error || videoResult.message}` },
+        { success: false, error: `Video segment generation failed: ${videoResult.error || videoResult.message}` },
         { status: 500 }
       );
     }
@@ -161,22 +161,22 @@ export async function POST(request: NextRequest) {
     
     if (!segments || segments.length === 0) {
       return NextResponse.json(
-        { success: false, error: '分段视频生成返回空结果' },
+        { success: false, error: 'Video segment generation returned nothing' },
         { status: 500 }
       );
     }
     
-    console.log(`[API] 分段视频生成成功: ${segments.length}个片段`);
+    console.log(`[API] segments generated: ${segments.length}`);
     
-    // Step 4: 合成最终视频
-    console.log('[API] Step 4: 合成最终视频...');
+    // Step 4: compose the final video
+    console.log('[API] Step 4: composing the final video...');
     
-    // 过滤出有videoUrl的片段
+    // Keep segments with a videoUrl
     const validSegments = segments.filter(s => s.videoUrl);
     
     if (validSegments.length === 0) {
       return NextResponse.json(
-        { success: false, error: '没有有效的分段视频可以合成' },
+        { success: false, error: 'No valid video segments to compose' },
         { status: 500 }
       );
     }
@@ -185,7 +185,7 @@ export async function POST(request: NextRequest) {
     
     if (!composeResult.success) {
       return NextResponse.json(
-        { success: false, error: `视频合成失败: ${composeResult.error || composeResult.message}` },
+        { success: false, error: `Video composition failed: ${composeResult.error || composeResult.message}` },
         { status: 500 }
       );
     }
@@ -194,18 +194,18 @@ export async function POST(request: NextRequest) {
     
     if (!finalVideoUrl) {
       return NextResponse.json(
-        { success: false, error: '视频合成返回空URL' },
+        { success: false, error: 'Video composition returned an empty URL' },
         { status: 500 }
       );
     }
     
-    console.log(`[API] 视频合成成功: finalVideoUrl=${redactUrl(finalVideoUrl)}`);
+    console.log(`[API] video composed: finalVideoUrl=${redactUrl(finalVideoUrl)}`);
     
-    // 计算总耗时
+    // Total time
     const totalTime = Math.round((Date.now() - startTime) / 1000);
-    console.log(`[API] 全流程完成: 总耗时=${totalTime}秒`);
+    console.log(`[API] flow complete: total ${totalTime}s`);
     
-    // 构造返回数据
+    // Build the response
     const responseData = {
       sessionId,
       productName: identifiedProductName,
@@ -224,7 +224,7 @@ export async function POST(request: NextRequest) {
       totalTimeSeconds: totalTime,
     };
     
-    // 发送回调通知（如果提供了callbackUrl）
+    // Send the callback when callbackUrl was provided
     if (callbackUrl) {
       await sendCallback(callbackUrl, {
         success: true,
@@ -238,15 +238,15 @@ export async function POST(request: NextRequest) {
     });
     
   } catch (error: unknown) {
-    console.error('[API] 处理请求失败:', safeLogError(error));
+    console.error('[API] request failed:', safeLogError(error));
     
     const errorResponse = {
       success: false,
-      error: error instanceof Error ? error.message : '未知错误',
+      error: error instanceof Error ? error.message : 'Unknown error',
       sessionId,
     };
     
-    // 发送错误回调通知
+    // Send the error callback
     const body = await request.json().catch(() => ({}));
     if (body.callbackUrl) {
       await sendCallback(body.callbackUrl, errorResponse);
@@ -256,67 +256,67 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// GET: 获取API使用说明
+// GET: API usage
 export async function GET() {
   return NextResponse.json({
-    name: 'vidio - 商品带货视频生成API',
+    name: 'vidio - product video generation API',
     version: '1.0.0',
-    description: '一键生成商品带货视频的自动化API',
+    description: 'Automated API that generates a product video in one call',
     endpoint: '/api/generate-product-video',
     method: 'POST',
     request: {
       imageUrl: {
         type: 'string',
         required: true,
-        description: '商品图片URL（HTTP/HTTPS）',
+        description: 'Product image URL (HTTP/HTTPS)',
       },
       language: {
         type: 'string',
         required: false,
-        default: 'chinese',
-        enum: ['chinese', 'english'],
-        description: '配音语言',
+        default: 'english',
+        enum: ['english', 'english'],
+        description: 'Voiceover language (english)',
       },
       productName: {
         type: 'string',
         required: false,
-        description: '商品名称（如不提供则自动识别）',
+        description: 'Product name (identified automatically when omitted)',
       },
       callbackUrl: {
         type: 'string',
         required: false,
-        description: '回调URL，完成后通知结果',
+        description: 'Callback URL notified with the result',
       },
     },
     response: {
       success: {
         type: 'boolean',
-        description: '是否成功',
+        description: 'Whether the call succeeded',
       },
       data: {
-        sessionId: 'string - 会话ID',
-        productName: 'string - 商品名称',
-        features: 'string[] - 商品卖点',
-        finalVideoUrl: 'string - 最终视频URL',
-        segments: 'array - 分段视频列表',
-        totalTimeSeconds: 'number - 总耗时（秒）',
+        sessionId: 'string - session ID',
+        productName: 'string - product name',
+        features: 'string[] - selling points',
+        finalVideoUrl: 'string - final video URL',
+        segments: 'array - video segments',
+        totalTimeSeconds: 'number - total time in seconds',
       },
       error: {
         type: 'string',
-        description: '错误信息（仅在失败时返回）',
+        description: 'Error message (only on failure)',
       },
     },
     example: {
       request: {
         imageUrl: 'https://example.com/product.jpg',
-        language: 'chinese',
+        language: 'english',
       },
       response: {
         success: true,
         data: {
           sessionId: 'api_1234567890',
-          productName: '高景观婴儿推车',
-          features: ['可调节遮阳篷', '大容量储物空间'],
+          productName: 'Travel stroller',
+          features: ['Adjustable canopy', 'Large storage basket'],
           finalVideoUrl: 'https://xxx.com/final.mp4',
           segments: [
             { id: 1, videoUrl: 'https://xxx.com/segment1.mp4', script: '...' },

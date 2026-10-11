@@ -10,8 +10,8 @@ deployment** until the launch gates below are closed. Nothing was published or d
 | TypeScript + lint (errors) | `pnpm validate` | passed |
 | Full lint | `pnpm lint` | 0 errors, 50 pre-existing warnings (`<img>`, hooks deps, unused vars in legacy UI) |
 | Unit | `pnpm test:unit` | 26 passed |
-| Embedded UI | `pnpm test:ui` | 11 passed |
-| Branding | `pnpm test:branding` | 6 passed |
+| Embedded UI | `pnpm test:ui` | 10 passed |
+| Branding (vidio identity, English-only, no legacy/hosting markers) | `pnpm test:branding` | 9 passed |
 | Integration (PostgreSQL, mocked S3/JWKS/provider, real FFmpeg) | `TEST_DATABASE_URL=postgresql://.../vidio_test pnpm test:integration` | 26 passed, incl. killed/restarted worker |
 | MCP protocol (running app + worker) | `pnpm test:mcp` / `pnpm test:mcp:identification` | 55 checks passed (deterministic; status polls are not counted) / passed |
 | Widget + production build | `pnpm build:widget` / `pnpm build` | passed |
@@ -53,7 +53,7 @@ Multi-image (PNG+JPEG) identification, script generation and editing with confli
 composition with English captions and soft music, real MP4 playback/download (H264 640×360 8.0 s,
 AAC, mov_text), failed-job persistence across reload with safe retry (attempt 2), worker
 kill/restart recovery, expired-media refresh, website pages intact. The studio is English-only;
-historical non-English website projects are read-only for the MCP tools.
+projects are English-only; migration 0007 normalises older rows.
 
 ## Known bugs and gaps
 

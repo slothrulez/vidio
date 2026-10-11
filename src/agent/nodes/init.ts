@@ -1,6 +1,6 @@
 /**
- * 初始化节点
- * 创建工作目录，准备环境
+ * Init node
+ * Creates the working directory
  */
 
 import { AgentStateType } from "../state";
@@ -9,17 +9,17 @@ import path from "path";
 import {  } from '@/lib/log-redact';
 
 export async function initNode(state: AgentStateType): Promise<Partial<AgentStateType>> {
-  console.log("[Agent] 初始化节点开始执行");
+  console.log("[Agent] init node started");
   
-  const productName = state.productName || "未命名商品";
+  const productName = state.productName || "Untitled product";
   
-  // 确定工作目录
+  // Working directory
   const isProd = !fs.existsSync("/workspace/projects/public") || 
                  process.env.COZE_PROJECT_ENV === "PROD";
   
   const baseDir = isProd ? "/tmp" : "/workspace/projects/public";
   
-  // 创建商品文件夹（处理重名）
+  // Create the product folder (handle duplicates)
   let folderName = productName;
   let folderPath = path.join(/*turbopackIgnore: true*/ baseDir, folderName);
   let counter = 1;
@@ -30,7 +30,7 @@ export async function initNode(state: AgentStateType): Promise<Partial<AgentStat
     counter++;
   }
   
-  // 创建子目录
+  // Subdirectories
   const audioDir = path.join(folderPath, "audio");
   const videoDir = path.join(folderPath, "video");
   
@@ -38,9 +38,9 @@ export async function initNode(state: AgentStateType): Promise<Partial<AgentStat
   fs.mkdirSync(audioDir, { recursive: true });
   fs.mkdirSync(videoDir, { recursive: true });
   
-  console.log(`[Agent] 工作目录创建完成: [path]`);
+  console.log(`[Agent] working directory created: [path]`);
   
-  // 计算相对路径
+  // Relative path
   const relativePath = isProd 
     ? `/api/file?path=${folderPath}` 
     : `/${folderName}`;

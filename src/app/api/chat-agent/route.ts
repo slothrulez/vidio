@@ -1,4 +1,4 @@
-// 问答式带货视频生成 Agent API - 对话式交互
+// Conversational product video agent API
 
 import { NextRequest, NextResponse } from "next/server";
 import { HeaderUtils } from "coze-coding-dev-sdk";
@@ -6,102 +6,102 @@ import { chatNodeStream } from "@/agent/chat-node";
 import { getDefaultState, ChatAgentState, AgentSSEMessage } from "@/agent/chat-state";
 import { redactUrl, safeLogError } from '@/lib/log-redact';
 
-// 会话存储（简单实现，生产环境应使用数据库）
+// Session store (simple in-memory implementation; production should use a database)
 const sessions = new Map<string, ChatAgentState>();
 
-// POST 处理对话请求
+// POST handles chat requests
 export async function POST(request: NextRequest) {
-  console.log("[Chat Agent API] 收到请求");
+  console.log("[Chat Agent API] request received");
   
   const body = await request.json();
   const { sessionId, message, imageUrl, auxiliaryImages, productName, voiceLanguage, scripts, segments, videoRatio } = body;
   
-  // 获取或创建会话
+  // Get or create the session
   const state: ChatAgentState = sessionId ? sessions.get(sessionId) || getDefaultState() : getDefaultState();
-  // 使用更唯一的ID生成方式（时间戳 + 随机数）
+  // Unique ID: timestamp + random suffix
   const newSessionId = sessionId || `session_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
   
-  // 如果用户上传新图片，不恢复旧的生成数据（让流程重新开始）
-  // 只有在没有上传图片时，才恢复前端传来的scripts/segments数据
+  // A new image upload restarts the flow, so old generation data is not restored
+  // Restore frontend scripts/segments only when no image was uploaded
   const isNewImageUpload = !!imageUrl;
   
   if (!isNewImageUpload) {
-    // 如果前端传递了scripts/segments数据，但state中没有，则使用前端数据作为备用
+    // Use frontend scripts/segments as a fallback when the state has none
     if (scripts && scripts.length > 0 && (!state.scripts || state.scripts.length === 0)) {
       state.scripts = scripts;
-      console.log(`[API] 从前端恢复scripts: ${scripts.length} 段文案`);
+      console.log(`[API] restored scripts from the frontend: ${scripts.length}`);
     }
     if (segments && segments.length > 0 && (!state.segments || state.segments.length === 0)) {
       state.segments = segments;
-      console.log(`[API] 从前端恢复segments: ${segments.length} 个视频片段`);
+      console.log(`[API] restored segments from the frontend: ${segments.length}`);
     }
   }
   
-  console.log(`[API] 会话恢复: sessionId=${sessionId}, newSessionId=${newSessionId}, isNewImageUpload=${isNewImageUpload}, scripts=${state.scripts ? state.scripts.length : '无'}, stage=${state.currentStage}`);
+  console.log(`[API] session restore: sessionId=${sessionId}, newSessionId=${newSessionId}, isNewImageUpload=${isNewImageUpload}, scripts=${state.scripts ? state.scripts.length : 'none'}, stage=${state.currentStage}`);
   
-  // 添加用户消息到历史
+  // Add the user message to the history
   const userMessage: { role: "user"; content: string } = {
     role: "user",
     content: message
   };
   
-  // 如果有图片，添加图片信息到消息
+  // Add image info to the message when present
   if (imageUrl) {
-    // 用户上传了新的商品图片，需要清除之前的生成状态，重新开始流程
-    console.log(`[API] 用户上传新图片，清除之前的生成状态（scripts、segments、finalVideoUrl等）`);
-    state.scripts = []; // 清除文案
-    state.segments = []; // 清除视频片段
-    state.finalVideoUrl = undefined; // 清除最终视频URL
+    // A new product image clears the previous generation state and restarts the flow
+    console.log(`[API] new image uploaded, clearing previous generation state (scripts, segments, finalVideoUrl)`);
+    state.scripts = []; // clear scripts
+    state.segments = []; // clear segments
+    state.finalVideoUrl = undefined; // clear the final video URL
     state.finalVideoPath = undefined;
     state.localVideoPath = undefined;
     state.finalDuration = undefined;
     state.subtitleUrl = undefined;
-    state.features = []; // 清除卖点
-    state.productName = undefined; // 清除商品名称（等待重新识别）
-    state.currentStage = "idle"; // 重置阶段为初始状态
+    state.features = []; // clear selling points
+    state.productName = undefined; // clear the product name pending re-identification
+    state.currentStage = "idle"; // reset the stage
     
-    // 构建多图片消息
-    let imageMessage = `${message}\n\n【商品图片信息】`;
-    imageMessage += `\n主图片（重点参考）：${imageUrl}`;
+    // Build the multi-image message
+    let imageMessage = `${message}\n\n[Product images]`;
+    imageMessage += `\nMain image (primary reference): ${imageUrl}`;
     
-    state.productImageUrl = imageUrl; // 存储主图片 URL
+    state.productImageUrl = imageUrl; // store the main image URL
     
-    // 如果有辅助图片，添加到消息和状态
+    // Add supporting images to the message and state
     if (auxiliaryImages && auxiliaryImages.length > 0) {
-      imageMessage += `\n辅助图片（补充参考）：`;
+      imageMessage += `\nSupporting images:`;
       auxiliaryImages.forEach((img: string, index: number) => {
-        imageMessage += `\n  - 图片${index + 1}: ${img}`;
+        imageMessage += `\n  - Image ${index + 1}: ${img}`;
       });
-      state.auxiliaryImages = auxiliaryImages; // 存储辅助图片 URL列表
+      state.auxiliaryImages = auxiliaryImages; // store the supporting image URLs
     }
     
     userMessage.content = imageMessage;
   }
   
-  // 如果有商品名称，预存储
+  // Store the product name when provided
   if (productName) {
     state.productName = productName;
   }
   
-  // 如果有配音语言，预存储
+  // Store the voiceover language when provided
   if (voiceLanguage) {
     state.voiceLanguage = voiceLanguage;
   }
   
-  // 如果有视频比例，预存储
+  // Store the video ratio when provided
   if (videoRatio) {
     state.videoRatio = videoRatio;
-    console.log(`[API] 视频比例设置为: ${videoRatio}`);
+    console.log(`[API] video ratio set to: ${videoRatio}`);
   }
   
   state.messages = [...state.messages, userMessage];
   
-  // 提取请求头
+  // Extract request headers
   const customHeaders = HeaderUtils.extractForwardHeaders(request.headers);
   
   const encoder = new TextEncoder();
   
-  // 使用 TransformStream 创建持续的 SSE 流
+  // Create a persistent SSE stream with TransformStream
   const transformStream = new TransformStream({
     transform(chunk, controller) {
       controller.enqueue(chunk);
@@ -110,21 +110,21 @@ export async function POST(request: NextRequest) {
   
   const writer = transformStream.writable.getWriter();
   
-  // 后台处理 generator
+  // Drive the generator in the background
   (async () => {
     try {
       const generator = chatNodeStream(state, customHeaders);
       
       for await (const agentMessage of generator) {
-        // 记录每个事件类型（写入到日志文件）
-        const eventLog = `[chat-agent API] 发送事件: type=${agentMessage.type}`;
+        // Log every event type
+        const eventLog = `[chat-agent API] event: type=${agentMessage.type}`;
         console.log(eventLog);
-        // 同时写入到app.log（通过info日志）
-        console.info(`[chat-agent API] 发送事件: type=${agentMessage.type}`);
+        // Also write to app.log via info
+        console.info(`[chat-agent API] event: type=${agentMessage.type}`);
         
         if (agentMessage.type === 'segment_video') {
           const segContent = agentMessage.content as { segmentId?: number; videoUrl?: string };
-          console.log(`[chat-agent API] segment_video详情: segmentId=${segContent.segmentId}, videoUrl=${redactUrl(segContent.videoUrl)}`);
+          console.log(`[chat-agent API] segment_video details: segmentId=${segContent.segmentId}, videoUrl=${redactUrl(segContent.videoUrl)}`);
         }
         
         const eventData = JSON.stringify({
@@ -134,14 +134,14 @@ export async function POST(request: NextRequest) {
           sessionId: newSessionId
         });
         
-        // 写入SSE流
+        // Write to the SSE stream
         try {
           await writer.write(encoder.encode(`data: ${eventData}\n\n`));
         } catch (writeError) {
-          console.error(`[chat-agent API] 写入失败: ${safeLogError(writeError)}`);
+          console.error(`[chat-agent API] write failed: ${safeLogError(writeError)}`);
         }
         
-        // 收集状态更新
+        // Collect state updates
         if (agentMessage.type === "complete" && agentMessage.data) {
           const result = agentMessage.data as { result?: { data?: Record<string, unknown> } };
           if (result.result?.data) {
@@ -155,30 +155,30 @@ export async function POST(request: NextRequest) {
           }
         }
         
-        // 处理 tool_result 更新状态
-        // 注意：有两种发送格式：
-        // 1. 视频生成特殊处理：{ type: "tool_result", content: { success, message, data: {...} } }
-        // 2. 一般工具调用：{ type: "tool_result", content: message, data: { success, message, data: {...} } }
+        // Apply tool_result to the state
+        // Two formats exist:
+        // 1. Video generation: { type: "tool_result", content: { success, message, data: {...} } }
+        // 2. Regular tool calls: { type: "tool_result", content: message, data: { success, message, data: {...} } }
         if (agentMessage.type === "tool_result") {
-          // 兼容两种格式：从content或data中提取toolData
+          // Support both: read toolData from content or data
           const contentObj = agentMessage.content && typeof agentMessage.content === 'object' 
             ? (agentMessage.content as Record<string, unknown>) 
             : null;
           const dataObj = agentMessage.data as Record<string, unknown> | undefined;
           
-          // 格式1：content包含完整对象，直接取content.data
-          // 格式2：content是字符串，取data.data
+          // Format 1: content is the full object, use content.data
+          // Format 2: content is a string, use data.data
           const outerData = contentObj || dataObj;
           const toolData = (outerData?.data || outerData) as Record<string, unknown> | undefined;
           
           if (toolData) {
-            console.log(`[API] tool_result 收到: scripts=${toolData.scripts ? `${(toolData.scripts as Array<unknown>).length}段` : '无'}, segments=${toolData.segments ? `${(toolData.segments as Array<unknown>).length}个` : '无'}, stage=${toolData.currentStage || '无'}`);
+            console.log(`[API] tool_result received: scripts=${toolData.scripts ? `${(toolData.scripts as Array<unknown>).length}` : 'none'}, segments=${toolData.segments ? `${(toolData.segments as Array<unknown>).length}` : 'none'}, stage=${toolData.currentStage || ''}`);
             if (toolData.productImageUrl) state.productImageUrl = toolData.productImageUrl as string;
             if (toolData.productName) state.productName = toolData.productName as string;
             if (toolData.features) state.features = toolData.features as string[];
             if (toolData.scripts) {
               state.scripts = toolData.scripts as Array<{ id: number; script: string; feature: string; prompt?: string }>;
-              console.log(`[API] tool_result 更新 state.scripts: ${state.scripts.length} 段文案`);
+              console.log(`[API] tool_result updated state.scripts: ${state.scripts.length}`);
             }
             if (toolData.segments) {
               state.segments = toolData.segments as Array<{
@@ -192,8 +192,8 @@ export async function POST(request: NextRequest) {
                 videoUrl?: string;
                 duration: number;
               }>;
-              console.log(`[API] 更新 state.segments: ${state.segments.length} 个片段`);
-              // 详细日志：检查segments是否包含videoUrl
+              console.log(`[API] updated state.segments: ${state.segments.length}`);
+              // Verbose log: check segments for videoUrl
               (toolData.segments as Array<{id?: number; videoUrl?: string}>).forEach((seg, i) => {
                 console.log(`[API] tool_result segment[${i}]: id=${seg.id}, hasVideo=${!!seg.videoUrl}, videoUrl=${redactUrl(seg.videoUrl)}`);
               });
@@ -212,9 +212,9 @@ export async function POST(request: NextRequest) {
           }
         }
         
-        // 处理 wait_feedback 更新状态（注意：后端发送的是content.state，不是data.state）
+        // Apply wait_feedback to the state (the backend sends content.state, not data.state)
         if (agentMessage.type === "wait_feedback") {
-          // 兼容两种格式：content.state 和 data.state
+          // Support both content.state and data.state
           const contentData = agentMessage.content;
           const contentState = contentData && typeof contentData === 'object' && 'state' in contentData
             ? (contentData.state as ChatAgentState)
@@ -224,10 +224,10 @@ export async function POST(request: NextRequest) {
             : null;
           const stateData = contentState || dataState;
           if (stateData) {
-            console.log(`[API] wait_feedback 更新状态: segments=${stateData.segments?.length || 0}个, stage=${stateData.currentStage}`);
+            console.log(`[API] wait_feedback state: segments=${stateData.segments?.length || 0}, stage=${stateData.currentStage}`);
             if (stateData.segments) {
               state.segments = stateData.segments;
-              // 详细日志：检查segments是否包含videoUrl
+              // Verbose log: check segments for videoUrl
               stateData.segments.forEach((seg, i) => {
                 console.log(`[API] wait_feedback segment[${i}]: id=${seg.id}, hasVideo=${!!seg.videoUrl}, videoUrl=${redactUrl(seg.videoUrl)}`);
               });
@@ -241,18 +241,18 @@ export async function POST(request: NextRequest) {
         }
       }
       
-      // 保存会话
+      // Save the session
       sessions.set(newSessionId, state);
       
-      // 详细日志：检查最终state.segments是否包含videoUrl
-      console.log(`[API] 最终state_update: segments=${state.segments?.length || 0}个, stage=${state.currentStage}`);
+      // Verbose log: check final state.segments for videoUrl
+      console.log(`[API] final state_update: segments=${state.segments?.length || 0}, stage=${state.currentStage}`);
       if (state.segments && state.segments.length > 0) {
         state.segments.forEach((seg, i) => {
-          console.log(`[API] 最终state_update segment[${i}]: id=${seg.id}, hasVideo=${!!seg.videoUrl}, videoUrl=${redactUrl(seg.videoUrl)}`);
+          console.log(`[API] final state_update segment[${i}]: id=${seg.id}, hasVideo=${!!seg.videoUrl}, videoUrl=${redactUrl(seg.videoUrl)}`);
         });
       }
       
-      // 发送最终状态
+      // Send the final state
       await writer.write(encoder.encode(`data: ${JSON.stringify({
         type: "state_update",
         sessionId: newSessionId,
@@ -269,22 +269,22 @@ export async function POST(request: NextRequest) {
       
       await writer.close();
     } catch (error) {
-      // 区分正常的用户取消和真正的错误
+      // Distinguish user cancellation from real errors
       const errorMessage = error instanceof Error ? error.message : String(error);
       if (errorMessage.includes("ResponseAborted") || errorMessage.includes("aborted") || errorMessage.includes("cancel")) {
-        // 用户主动取消请求（切换会话、关闭页面等），属于正常行为，不打印错误日志
-        console.log("[Chat Agent API] 用户取消了请求");
+        // User cancelled (switched session, closed page): normal, no error log
+        console.log("[Chat Agent API] request cancelled by the user");
       } else {
-        // 真正的错误，打印错误日志
-        console.error("[Chat Agent API] 流处理错误:", safeLogError(error));
+        // Real error
+        console.error("[Chat Agent API] stream error:", safeLogError(error));
         try {
           await writer.write(encoder.encode(`data: ${JSON.stringify({
             type: "error",
-            content: errorMessage || "处理失败"
+            content: errorMessage || "Processing failed"
           })}\n\n`));
           await writer.close();
         } catch {
-          // Writer 已关闭，忽略
+          // Writer already closed; ignore
         }
       }
     }
@@ -299,19 +299,19 @@ export async function POST(request: NextRequest) {
   });
 }
 
-// GET 获取会话状态
+// GET returns the session state
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const sessionId = searchParams.get("sessionId");
   
   if (!sessionId) {
-    return NextResponse.json({ error: "缺少 sessionId" }, { status: 400 });
+    return NextResponse.json({ error: "Missing sessionId" }, { status: 400 });
   }
   
   const state = sessions.get(sessionId);
   
   if (!state) {
-    return NextResponse.json({ error: "会话不存在" }, { status: 404 });
+    return NextResponse.json({ error: "Session not found" }, { status: 404 });
   }
   
   return NextResponse.json({
@@ -329,16 +329,16 @@ export async function GET(request: NextRequest) {
   });
 }
 
-// DELETE 清除会话
+// DELETE clears the session
 export async function DELETE(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const sessionId = searchParams.get("sessionId");
   
   if (!sessionId) {
-    return NextResponse.json({ error: "缺少 sessionId" }, { status: 400 });
+    return NextResponse.json({ error: "Missing sessionId" }, { status: 400 });
   }
   
   sessions.delete(sessionId);
   
-  return NextResponse.json({ success: true, message: "会话已清除" });
+  return NextResponse.json({ success: true, message: "Session cleared" });
 }

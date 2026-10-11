@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
     const auxiliaryImageFiles = formData.getAll('auxiliaryImages') as File[];
 
     if (!imageFile || imageFile.size === 0) {
-      return NextResponse.json({ error: '请上传主图片' }, { status: 400 });
+      return NextResponse.json({ error: 'Upload a main image' }, { status: 400 });
     }
 
     // Initialize clients with SDK default configuration
@@ -52,55 +52,55 @@ export async function POST(request: NextRequest) {
           expireTime: 300,
         });
         auxiliaryImageUrls.push(auxUrl);
-        console.log(`[API] 辅助图片${i + 1}已上传: ${redactUrl(auxUrl)}`);
+        console.log(`[API] supporting image ${i + 1} uploaded: ${redactUrl(auxUrl)}`);
       }
     }
 
     // Build prompt for product identification
     const hasAuxiliaryImages = auxiliaryImageUrls.length > 0;
     const identifyPrompt = hasAuxiliaryImages 
-      ? `请仔细分析这些商品图片，识别商品信息。第一张图片是主图片（重点参考），其他图片是辅助图片（补充参考）。
+      ? `Carefully analyse these product images and identify the product. The first image is the main image (primary reference); the others are supporting images.
 
-请综合所有图片信息，识别以下内容：
-1. 商品名称：这是什么商品？请给出具体商品名称（例如：保温杯、手机壳、耳机等）
-2. 商品类型：商品的品类分类
-3. 材质判断：从外观判断可能的材质（如：不锈钢、塑料、玻璃、皮革等）
-4. 特点分析：从所有图片中能看出的产品特点（如：便携、时尚、防水等），结合不同角度展示的细节
-5. 建议卖点：根据所有图片中的商品特征，建议3-5个卖点
+Using every image, identify:
+1. Product name: what is it? Give a specific name (e.g. insulated bottle, phone case, headphones)
+2. Product type: its category
+3. Materials: likely materials judged from the appearance (e.g. stainless steel, plastic, glass, leather)
+4. Features: product traits visible across the images (e.g. portable, stylish, waterproof), using details from each angle
+5. Suggested selling points: 3-5 selling points based on the product traits
 
-请以JSON格式返回，格式如下：
+Return JSON in exactly this format:
 {
-  "productName": "商品名称",
-  "productType": "商品类型",
-  "suggestedMaterials": ["材质1", "材质2"],
-  "suggestedFeatures": ["特点1", "特点2"],
-  "suggestedPoints": ["建议卖点1", "建议卖点2", "建议卖点3"]
+  "productName": "product name",
+  "productType": "product type",
+  "suggestedMaterials": ["material 1", "material 2"],
+  "suggestedFeatures": ["feature 1", "feature 2"],
+  "suggestedPoints": ["selling point 1", "selling point 2", "selling point 3"]
 }
 
-只返回JSON，不要有其他文字。`
-      : `请仔细分析这张商品图片，识别以下信息：
+Return only the JSON with no other text, in English.`
+        : `Carefully analyse this product image and identify:
 
-1. 商品名称：这是什么商品？请给出具体商品名称（例如：保温杯、手机壳、耳机等）
-2. 商品类型：商品的品类分类
-3. 材质判断：从外观判断可能的材质（如：不锈钢、塑料、玻璃、皮革等）
-4. 特点分析：从外观能看出的产品特点（如：便携、时尚、防水等）
-5. 建议卖点：根据图片中的商品特征，建议3-5个卖点
+1. Product name: what is it? Give a specific name (e.g. insulated bottle, phone case, headphones)
+2. Product type: its category
+3. Materials: likely materials judged from the appearance (e.g. stainless steel, plastic, glass, leather)
+4. Features: product traits visible in the image (e.g. portable, stylish, waterproof)
+5. Suggested selling points: 3-5 selling points based on the product traits
 
-请以JSON格式返回，格式如下：
+Return JSON in exactly this format:
 {
-  "productName": "商品名称",
-  "productType": "商品类型",
-  "suggestedMaterials": ["材质1", "材质2"],
-  "suggestedFeatures": ["特点1", "特点2"],
-  "suggestedPoints": ["建议卖点1", "建议卖点2", "建议卖点3"]
+  "productName": "product name",
+  "productType": "product type",
+  "suggestedMaterials": ["material 1", "material 2"],
+  "suggestedFeatures": ["feature 1", "feature 2"],
+  "suggestedPoints": ["selling point 1", "selling point 2", "selling point 3"]
 }
 
-只返回JSON，不要有其他文字。`;
+Return only the JSON with no other text, in English.`;
 
     // Build message content with all images
     const messageContent: Array<{ type: 'text' | 'image_url'; text?: string; image_url?: { url: string } }> = [
       { type: 'text', text: identifyPrompt },
-      { type: 'image_url', image_url: { url: imageUrl } }, // 主图片
+      { type: 'image_url', image_url: { url: imageUrl } }, // main image
     ];
     
     // Add auxiliary images to the message
@@ -131,14 +131,14 @@ export async function POST(request: NextRequest) {
       if (jsonMatch) {
         result = JSON.parse(jsonMatch[0]);
       } else {
-        throw new Error('无法解析识别结果');
+        throw new Error('Could not parse the recognition result');
       }
     } catch (e) {
-      console.error('解析失败:', response.content);
+      console.error('Parse failed:', response.content);
       // Fallback result
       result = {
-        productName: '商品',
-        productType: '未知商品',
+        productName: 'Product',
+        productType: 'Unknown product',
         suggestedMaterials: [],
         suggestedFeatures: [],
         suggestedPoints: [],
@@ -151,9 +151,9 @@ export async function POST(request: NextRequest) {
       imageKey,
     });
   } catch (error) {
-    console.error('识别失败:', safeLogError(error));
+    console.error('Identification failed:', safeLogError(error));
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : '识别失败' },
+      { error: error instanceof Error ? error.message : 'Identification failed' },
       { status: 500 }
     );
   }

@@ -1,5 +1,5 @@
 /**
- * 节点函数索引
+ * Node function index
  */
 
 export { initNode } from "./init";

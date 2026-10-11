@@ -1,4 +1,4 @@
-// 问答式带货视频生成 Agent - 对话节点
+// Conversational product video agent - chat node
 
 import { LLMClient, Config } from "coze-coding-dev-sdk";
 import {
@@ -14,115 +14,115 @@ import {
 import type { ChatAgentState, AgentSSEMessage } from "./chat-state";
 import { redactUrl } from '@/lib/log-redact';
 
-// 系统提示词 - 定义 Agent 的角色和能力
-const SYSTEM_PROMPT = `你是专业的商家带货视频智能助手【vidio】，专注为商家全自动生成问答式带货短视频。
+// System prompt defining the agent's role and capabilities
+const SYSTEM_PROMPT = `You are vidio, a professional assistant that produces short promotional product videos for merchants, fully automatically, in English.
 
-## 你的核心能力
-接收用户上传的商品图片、视频或文字描述，智能提取商品名称与核心卖点；分段创作口播文案与对应视频画面提示词，文案与画面一一匹配；协助完成TTS配音、AI视频生成、音视频混剪、片段重制、成片合成，同时自动生成字幕并搭配背景音乐。
+## Core capabilities
+Take the product images, videos or text the user provides and extract the product name and key selling points; write a scene-by-scene English voiceover script with a matching visual prompt for every scene; drive TTS voiceover, AI video generation, audio/video mixing, single-scene regeneration and final composition, with automatic subtitles and background music.
 
-## 交互规则（必须严格遵守）
-1. 自我介绍统一称呼自己为「vidio」，语气亲切、专业，贴合短视频带货场景；
-2. 引导用户完成全流程操作：素材上传、文案确认、片段预览、单片段重生成、自选片段合成成片；
-3. 熟悉整套视频生产逻辑，主动告知当前所处流程阶段，遇到资源访问、生成异常等问题及时友好提示用户；
-4. 支持用户修改文案、单独重新生成某一段视频片段、调整字幕与背景音乐配置；
-5. 全程围绕带货短视频创作展开对话，简洁高效，不输出无关内容。
+## Interaction rules (always follow)
+1. Always introduce yourself as vidio; be friendly and professional, and keep the short-form product video context in mind.
+2. Guide the user through the whole flow: upload assets, confirm the script, preview segments, regenerate single segments, compose the chosen segments into the final video.
+3. Know the whole production flow, say which stage you are in, and explain resource or generation problems clearly and kindly.
+4. Let the user edit the script, regenerate a single video segment, and adjust subtitle and background music settings.
+5. Stay focused on the product video; be concise and never output unrelated content. Always reply in English.
 
-## 核心工作流程（严格按顺序执行）
+## Workflow (strictly in order)
 
-### 第一步：用户输入 → 识别商品
-- **执行方式**：自动执行
-- **结果处理**：识别结果必须返回显示给用户（商品名称+卖点列表）
-- **下一步**：识别成功后，立即自动调用 generateScripts
+### Step 1: user input → identify the product
+- **Execution**: automatic
+- **Result**: always show the recognition result (product name + selling points)
+- **Next**: once identified, immediately call generateScripts
 
-### 第二步：生成文案+画面Prompt → 等待反馈
-- **执行方式**：自动执行
-- **结果处理**：文案列表必须返回显示给用户（4组口播文案+画面Prompt）
-- **反馈等待**：默认等待用户确认/驳回
-  - 如果用户说"驳回/不满意/重新生成" → 重新调用 generateScripts
-  - 如果用户说"确认/满意/生成视频" → 调用 generateVideoSegments 进入第三步
-  - **特殊情况**：如果用户在初始请求中明确说"不需要反馈/直接生成视频"等，则不等待，直接调用 generateVideoSegments
+### Step 2: write the script + visual prompts → wait for feedback
+- **Execution**: automatic
+- **Result**: always show the script list (4 voiceover scripts + visual prompts)
+- **Feedback**: wait for the user to confirm or reject
+- If the user says "reject / not happy / regenerate" → call generateScripts again
+- If the user says "confirm / looks good / generate the video" → call generateVideoSegments (step 3)
+- **Exception**: if the initial request explicitly says "no review needed / generate the video directly", skip the wait and call generateVideoSegments
 
-### 第三步：生成视频片段 → 等待反馈
-- **执行方式**：自动执行（用户确认文案后）
-- **结果处理**：视频片段预览必须返回显示给用户（每个片段的播放器）
-- **反馈等待**：默认等待用户选择
-  - 如果用户说"重生成第X段" → 调用 regenerateSegment
-  - 如果用户说"合成/完成/确认合成" → 调用 composeFinalVideo 进入第四步
-  - **特殊情况**：如果用户在确认文案时已说明"不需要反馈/直接合成"，则不等待，直接调用 composeFinalVideo
+### Step 3: generate video segments → wait for feedback
+- **Execution**: automatic (after the script is confirmed)
+- **Result**: always show the segment previews (one player per segment)
+- **Feedback**: wait for the user to choose
+- If the user says "regenerate segment X" → call regenerateSegment
+- If the user says "compose / finish / confirm composition" → call composeFinalVideo (step 4)
+- **Exception**: if the user already said "no review needed / compose directly" when confirming the script, skip the wait and call composeFinalVideo
 
-### 第四步：合成成片 → 输出
-- **执行方式**：自动执行
-- **结果处理**：成片下载链接必须返回显示给用户（视频播放器+下载按钮）
-- **流程结束**：合成完成后，回复用户"视频已完成"并提供下载链接，不再调用任何工具
+### Step 4: compose the final video → output
+- **Execution**: automatic
+- **Result**: always show the download link (video player + download button)
+- **End**: after composition, reply "Your video is ready" with the download link and call no more tools
 
-## 关键规则（必须严格遵守）
-1. **状态检查**：每次调用工具前，先检查当前状态：
-   - 如果已有 segments（视频片段），用户说"合成"，必须调用 composeFinalVideo，绝不能再次调用 generateVideoSegments
-   - 如果已有 scripts（文案），用户说"生成视频/确认"，必须调用 generateVideoSegments，绝不能再次调用 generateScripts
-   - 如果已有 finalVideoUrl，流程结束，不再调用任何工具
+## Key rules (always follow)
+1. **State check**: before every tool call, check the current state:
+   - If segments already exist and the user says "compose", call composeFinalVideo; never call generateVideoSegments again
+   - If scripts already exist and the user says "generate the video / confirm", call generateVideoSegments; never call generateScripts again
+   - If finalVideoUrl exists, the flow is over; call no more tools
 
-2. **工具选择优先级**：
-   - 当前阶段 video_generated + 用户说"合成" → composeFinalVideo（最高优先级）
-   - 当前阶段 script_generated + 用户说"确认/生成视频" → generateVideoSegments
-   - 当前阶段 product_identified → generateScripts（自动执行）
+2. **Tool priority**:
+   - stage video_generated + user says "compose" → composeFinalVideo (highest priority)
+   - stage script_generated + user says "confirm / generate the video" → generateVideoSegments
+   - stage product_identified → generateScripts (automatic)
 
-3. **避免重复执行**：
-   - 如果 segments 已生成且数量 > 0，绝不要再次调用 generateVideoSegments
-   - 如果 scripts 已生成且数量 > 0，绝不要再次调用 generateScripts（除非用户明确要求重生成）
-   - 如果 finalVideoUrl 已存在，回复用户"视频已完成"，不再调用任何工具
+3. **Avoid repeats**:
+   - If segments exist (count > 0), never call generateVideoSegments again
+   - If scripts exist (count > 0), never call generateScripts again unless the user explicitly asks to regenerate
+   - If finalVideoUrl exists, reply "Your video is ready" and call no more tools
 
-## 结果显示要求
-- 商品识别结果：显示商品名称和卖点标签列表
-- 文案生成结果：显示4段文案，每段带序号和画面描述
-- 视频片段结果：显示每个片段的预览播放器
-- 成片结果：显示最终视频播放器和下载链接
+## Result display
+- Product recognition: show the product name and a list of selling-point tags
+- Script generation: show 4 scripts, each numbered with its visual description
+- Video segments: show a preview player per segment
+- Final video: show the final player and the download link
 
-## 工具调用格式
-当需要调用工具时，使用以下 JSON 格式（包裹在特殊标签中）：
+## Tool call format
+When you need a tool, use this JSON format wrapped in the special tags:
 <tool_call>
 {
-  "tool": "工具名称",
+  "tool": "toolName",
   "input": {
-    "参数名": "参数值"
+    "paramName": "paramValue"
   }
 }
 </tool_call>
 
-## 可用工具
-1. uploadAndIdentifyProduct - 上传图片并识别商品（支持多图片）
-   输入: { imageUrl: string, auxiliaryImages?: string[], productName?: string }
-   说明: imageUrl是主图片（重点参考），auxiliaryImages是辅助图片列表（补充参考）
-   输出: { productName, features, productImageUrl } - 必须显示
-   
-2. generateScripts - 生成带货文案
-   输入: { productName: string, features: string[] }
-   输出: { scripts: [{id, script, prompt}] } - 必须显示
-   
-3. generateVideoSegments - 生成视频片段
-   输入: { scripts: [], productImageUrl: string, productName: string }
-   输出: { segments: [{id, videoUrl, audioUrl}] } - 必须显示
-   
-4. composeFinalVideo - 合成最终视频
-   输入: { segments: [], productName: string, bgmUrl?: string, embedSubtitle?: boolean }
-   输出: { finalVideoUrl, subtitleUrl } - 必须显示
-   
-5. regenerateSegment - 重生成单个片段
-   输入: { segmentId: number, script: string, prompt: string, productImageUrl: string }
-   输出: { videoUrl, audioUrl } - 必须显示
-   
-6. modifyScript - 修改文案
-   输入: { scripts: [], scriptId: number, newScript: string }
-   输出: { scripts: [] } - 必须显示
+## Available tools
+1. uploadAndIdentifyProduct - upload images and identify the product (supports multiple images)
+   Input: { imageUrl: string, auxiliaryImages?: string[], productName?: string }
+   Note: imageUrl is the main image (primary reference); auxiliaryImages are supporting images
+   Output: { productName, features, productImageUrl } - must be shown
 
-## 重要规则
-1. 识别商品成功后，自动继续生成文案（无需等待）
-2. 文案生成后，等待用户确认/驳回
-3. 用户确认文案后，自动生成视频片段
-4. 视频片段生成后，等待用户选择/确认合成
-5. 如果用户明确表示"不需要反馈/直接生成/直接合成"等，则跳过等待环节
-6. 每个步骤的结果必须返回显示给用户`;
+2. generateScripts - write the promotional script
+   Input: { productName: string, features: string[] }
+   Output: { scripts: [{id, script, prompt}] } - must be shown
 
-// 解析工具调用
+3. generateVideoSegments - generate video segments
+   Input: { scripts: [], productImageUrl: string, productName: string }
+   Output: { segments: [{id, videoUrl, audioUrl}] } - must be shown
+
+4. composeFinalVideo - compose the final video
+   Input: { segments: [], productName: string, bgmUrl?: string, embedSubtitle?: boolean }
+   Output: { finalVideoUrl, subtitleUrl } - must be shown
+
+5. regenerateSegment - regenerate a single segment
+   Input: { segmentId: number, script: string, prompt: string, productImageUrl: string }
+   Output: { videoUrl, audioUrl } - must be shown
+
+6. modifyScript - edit the script
+   Input: { scripts: [], scriptId: number, newScript: string }
+   Output: { scripts: [] } - must be shown
+
+## Important rules
+1. After the product is identified, continue to the script automatically (no wait)
+2. After the script is written, wait for the user to confirm or reject
+3. After the user confirms the script, generate the video segments automatically
+4. After the segments are generated, wait for the user to choose / confirm composition
+5. If the user explicitly says "no review needed / generate directly / compose directly", skip the waits
+6. Every step's result must be shown to the user`;
+
+// Parse tool calls
 function parseToolCall(content: string): { tool: string; input: Record<string, unknown> } | null {
   const toolCallMatch = content.match(/<tool_call>\s*([\s\S]*?)\s*<\/tool_call>/);
   if (!toolCallMatch) return null;
@@ -135,30 +135,30 @@ function parseToolCall(content: string): { tool: string; input: Record<string, u
   }
 }
 
-// 获取工具执行进度提示消息
+// Progress message for a tool
 function getToolProgressMessage(toolName: string, state?: ChatAgentState): string {
   const scriptsCount = state?.scripts?.length || 4;
   const segmentsCount = state?.scripts?.length || 4;
   
   switch (toolName) {
     case "uploadAndIdentifyProduct":
-      return "🔍 正在识别商品信息，预计提取3-5个卖点...";
+      return "🔍 Identifying the product and extracting 3-5 selling points...";
     case "generateScripts":
-      return `✍️ 正在生成带货文案，预计${scriptsCount}段文案，请稍等...`;
+      return `✍️ Writing the script (${scriptsCount} scenes), please wait...`;
     case "generateVideoSegments":
-      return `🎬 正在生成视频片段，预计${segmentsCount}个片段，请稍等...`;
+      return `🎬 Generating ${segmentsCount} video segments, please wait...`;
     case "composeFinalVideo":
-      return "🎞️ 正在合成最终视频，预计需要1-2分钟...";
+      return "🎞️ Composing the final video, this takes about 1-2 minutes...";
     case "regenerateSegment":
-      return "🔄 正在重新生成片段...";
+      return "🔄 Regenerating the segment...";
     case "modifyScript":
-      return "📝 正在修改文案...";
+      return "📝 Updating the script...";
     default:
-      return "⏳ 正在处理...";
+      return "⏳ Working...";
   }
 }
 
-// 执行工具（支持实时事件回调）
+// Execute a tool (with live event callbacks)
 async function executeTool(
   toolName: string,
   input: Record<string, unknown>,
@@ -166,13 +166,13 @@ async function executeTool(
   customHeaders?: Record<string, string>,
   onEvent?: (event: AgentSSEMessage) => void
 ): Promise<ToolResult> {
-  console.log(`[Agent] 执行工具: ${toolName}`, input);
+  console.log(`[Agent] executing tool: ${toolName}`, input);
   
   switch (toolName) {
     case "uploadAndIdentifyProduct":
       return await uploadAndIdentifyProduct(
         input.imageUrl as string,
-        input.auxiliaryImages as string[] | undefined, // 辅助图片列表
+        input.auxiliaryImages as string[] | undefined, // supporting images
         input.productName as string | undefined,
         customHeaders
       );
@@ -183,25 +183,25 @@ async function executeTool(
         input.features as string[],
         input.productImageUrl as string | undefined,
         customHeaders,
-        state.voiceLanguage // 传递会话的配音语言设置
+        state.voiceLanguage // the session's voiceover language
       );
     
     case "generateVideoSegments":
-      // 传递回调函数，实时发送segment_video事件
+      // callback that emits segment_video events live
       return await generateVideoSegments(
         state.scripts || input.scripts,
         input.productImageUrl as string,
         input.productName as string,
         customHeaders,
         (segment) => {
-          // 实时回调：yield segment_video事件
-          console.log(`[Agent] 实时发送segment_video事件: segmentId=${segment.id}`);
+          // live callback: yield a segment_video event
+          console.log(`[Agent] live segment_video event: segmentId=${segment.id}`);
           if (onEvent) {
             onEvent({
               type: "segment_video",
               content: {
                 segmentId: segment.id,
-                videoUrl: segment.videoUrl,  // 只使用对象存储URL
+                videoUrl: segment.videoUrl,  // object storage URL only
                 audioUrl: segment.audioUrl,
                 duration: segment.duration,
                 script: segment.script
@@ -212,25 +212,25 @@ async function executeTool(
       );
     
     case "composeFinalVideo":
-      // 如果LLM没有传入segments参数，从state中获取
+      // Fall back to state when the LLM omits segments
       const segmentsForCompose = (input.segments && Array.isArray(input.segments) && input.segments.length > 0)
         ? input.segments
         : state.segments || [];
       
       if (segmentsForCompose.length === 0) {
-        console.error('[Agent] composeFinalVideo: segments为空，无法合成视频');
+        console.error('[Agent] composeFinalVideo: no segments, cannot compose');
         return {
           success: false,
-          message: "无法合成视频：缺少视频片段数据。请先生成视频片段。",
+          message: "Cannot compose the video: no segments yet. Generate the video segments first.",
           error: "segments_empty"
         };
       }
       
-      console.log(`[Agent] composeFinalVideo: 使用 ${segmentsForCompose.length} 个片段进行合成`);
+      console.log(`[Agent] composeFinalVideo: composing ${segmentsForCompose.length} segments`);
       
       return await composeFinalVideo(
         segmentsForCompose as Array<{ id: number; script: string; prompt: string; videoPath?: string; audioPath?: string; videoUrl?: string; audioUrl?: string }>,
-        input.productName as string || state.productName || "商品",
+        input.productName as string || state.productName || "Product",
         { bgmUrl: input.bgmUrl as string | undefined, embedSubtitle: input.embedSubtitle as boolean | undefined },
         customHeaders
       );
@@ -258,46 +258,46 @@ async function executeTool(
     default:
       return {
         success: false,
-        message: `未知的工具: ${toolName}`
+        message: `Unknown tool: ${toolName}`
       };
   }
 }
 
-// 需要等待用户反馈的阶段
+// Stages that wait for user feedback
 const WAIT_FOR_USER_FEEDBACK_STAGES = ["script_generated", "video_generated"];
 
-// 自动执行的流程链：识别成功后自动执行下一步
+// Automatic chain: the next step runs after a successful identification
 const AUTO_NEXT_TOOL: Record<string, string> = {
-  "uploadAndIdentifyProduct": "generateScripts",  // 识别成功 → 自动生成文案
-  // generateScripts 后需要等待用户确认
-  // generateVideoSegments 后需要等待用户选择
+  "uploadAndIdentifyProduct": "generateScripts",  // identified → write the script automatically
+  // generateScripts waits for confirmation
+  // generateVideoSegments waits for a selection
 };
 
-// 流式对话节点（支持多轮工具调用）
+// Streaming chat node (multi-round tool calls)
 export async function* chatNodeStream(
   state: ChatAgentState,
   customHeaders?: Record<string, string>
 ): AsyncGenerator<AgentSSEMessage> {
-  console.log("[Agent] 流式对话节点开始执行");
+  console.log("[Agent] streaming chat node started");
   
   const llmClient = new LLMClient(new Config(), customHeaders);
   
-  // 当前状态（会被工具结果更新）
+  // Current state (updated by tool results)
   let currentState = state;
   
-  // 构建对话历史
+  // Build the conversation history
   const conversationHistory: Array<{ role: "system" | "user" | "assistant"; content: string }> = [];
   
-  // 添加历史消息（包含之前的工具调用结果）
+  // Add history (including earlier tool results)
   if (state.messages && state.messages.length > 0) {
     conversationHistory.push(...state.messages);
   }
   
-  // 检查用户消息是否包含意图标签，直接调用对应工具
+  // Intent tags in the user message call the tool directly
   const userMessages = conversationHistory.filter(m => m.role === "user");
   const lastUserMessage = userMessages[userMessages.length - 1];
   
-  // 提取消息内容为字符串
+  // Extract the message content as a string
   let lastUserMessageContent = '';
   if (lastUserMessage) {
     const content: unknown = lastUserMessage.content;
@@ -311,10 +311,10 @@ export async function* chatNodeStream(
   }
   
   if (lastUserMessage && lastUserMessageContent) {
-    // 检查合成视频意图
+    // Compose-video intent
     if (lastUserMessageContent.includes("[COMPOSE_VIDEO]") && state.segments && state.segments.length > 0) {
-      console.log("[Agent] 检测到[COMPOSE_VIDEO]意图，直接调用composeFinalVideo");
-      yield { type: "progress", content: "正在合成完整视频..." };
+      console.log("[Agent] [COMPOSE_VIDEO] intent detected, calling composeFinalVideo");
+      yield { type: "progress", content: "Composing the final video..." };
       
       const toolResult = await composeFinalVideo(state.segments, state.productName || "", undefined, customHeaders);
       
@@ -348,77 +348,77 @@ export async function* chatNodeStream(
           }
         };
         
-        yield { type: "complete", content: "视频合成完成" };
+        yield { type: "complete", content: "Video composed" };
         return;
       } else {
-        yield { type: "error", content: toolResult.message || "合成视频失败" };
-        yield { type: "complete", content: "合成失败" };
+        yield { type: "error", content: toolResult.message || "Video composition failed" };
+        yield { type: "complete", content: "Composition failed" };
         return;
       }
     }
     
-    // 检查生成分段视频意图
-    console.log(`[Agent] 检查[GENERATE_SEGMENTS]意图: hasTag=${lastUserMessageContent.includes("[GENERATE_SEGMENTS]")}, scripts=${state.scripts ? state.scripts.length : 'undefined'}, stage=${state.currentStage}`);
+    // Generate-segments intent
+    console.log(`[Agent] checking [GENERATE_SEGMENTS] intent: hasTag=${lastUserMessageContent.includes("[GENERATE_SEGMENTS]")}, scripts=${state.scripts ? state.scripts.length : 'undefined'}, stage=${state.currentStage}`);
     if (lastUserMessageContent.includes("[GENERATE_SEGMENTS]")) {
-      // 确保scripts存在，如果没有则从currentState获取或报错
+      // Ensure scripts exist, falling back to currentState or failing
       const scriptsToUse = state.scripts || currentState.scripts;
       if (!scriptsToUse || scriptsToUse.length === 0) {
-        console.error("[Agent] [GENERATE_SEGMENTS]意图检测失败: scripts为空");
-        yield { type: "error", content: "文案数据缺失，请先生成文案" };
-        yield { type: "complete", content: "生成失败" };
+        console.error("[Agent] [GENERATE_SEGMENTS] intent failed: no scripts");
+        yield { type: "error", content: "No script yet; write the script first" };
+        yield { type: "complete", content: "Generation failed" };
         return;
       }
       
-      console.log("[Agent] 检测到[GENERATE_SEGMENTS]意图，直接调用generateVideoSegments，scripts数量:", scriptsToUse.length);
-      yield { type: "progress", content: "正在生成分段视频..." };
+      console.log("[Agent] [GENERATE_SEGMENTS] intent detected, calling generateVideoSegments, scripts:", scriptsToUse.length);
+      yield { type: "progress", content: "Generating video segments..." };
       
-      // 先发送state_update初始化segments数组，确保前端可以接收segment_video事件
+      // Send an initial state_update so the frontend can receive segment_video events
       const initialSegments = scriptsToUse.map((script, index) => ({
         id: script.id || index + 1,
         script: script.script || script.feature || '',
         feature: script.feature || '',
         prompt: script.prompt || '',
-        videoUrl: '', // 视频生成后通过segment_video事件更新
-        audioUrl: '', // 音频生成后通过segment_video事件更新
+        videoUrl: '', // filled by segment_video events
+        audioUrl: '', // filled by segment_video events
       }));
       
       yield {
         type: "state_update",
-        content: {  // 使用content字段
+        content: {  // content field
           ...currentState,
-          // 不发送scripts，避免在视频生成阶段显示文案
-          // scripts: scriptsToUse,  // 移除这行
+          // scripts are omitted so they are not shown during generation
+          // scripts: scriptsToUse,  // removed
           segments: initialSegments,
           currentStage: "video_generating"
         }
       };
       
-      console.log(`[Agent] yield state_update事件: segments=${initialSegments.length}个, stage=video_generating, 不包含scripts`);
+      console.log(`[Agent] yield state_update: segments=${initialSegments.length}, stage=video_generating, no scripts`);
       
-      // 使用stream版本，实时yield事件
+      // Stream version yields events live
       const streamGenerator = generateVideoSegmentsStream(
         scriptsToUse,
         state.productImageUrl || currentState.productImageUrl || "",
         state.productName || currentState.productName || "",
         customHeaders,
-        state.videoRatio || currentState.videoRatio // 传递视频比例参数
+        state.videoRatio || currentState.videoRatio // video ratio
       );
       
       let toolResult: ToolResult | null = null;
       const segmentsFromStream: Array<{ id: number; videoUrl: string; duration?: number; script?: string }> = [];
       
-      // 遍历stream，实时yield segment事件
+      // Iterate the stream and yield segment events live
       for await (const event of streamGenerator) {
         if (event.type === 'segment_video') {
-          // tools.ts yield的segment对象使用id字段，不是segmentId
+          // segments yielded by tools.ts use id, not segmentId
           const segment = event.content as { id: number; segmentId?: number; videoUrl: string; duration?: number; script?: string };
           const actualSegmentId = segment.id || segment.segmentId;
-          console.log(`[Agent] yield segment_video事件: id=${actualSegmentId}, videoUrl=${redactUrl(segment.videoUrl)}`);
+          console.log(`[Agent] yield segment_video: id=${actualSegmentId}, videoUrl=${redactUrl(segment.videoUrl)}`);
           yield {
             type: "segment_video",
             content: {
-              segmentId: actualSegmentId,  // 前端期望segmentId字段
-              id: actualSegmentId,         // 同时提供id字段以兼容
+              segmentId: actualSegmentId,  // frontend expects segmentId
+              id: actualSegmentId,         // id kept for compatibility
               videoUrl: segment.videoUrl,
               duration: segment.duration,
               script: segment.script
@@ -426,18 +426,18 @@ export async function* chatNodeStream(
           };
         } else if (event.type === 'result') {
           toolResult = event.data as ToolResult;
-          console.log(`[Agent] 收到最终结果: success=${toolResult.success}`);
+          console.log(`[Agent] final result: success=${toolResult.success}`);
         }
       }
       
       if (!toolResult) {
-        yield { type: "error", content: "视频生成结果未返回" };
-        yield { type: "complete", content: "生成失败" };
+        yield { type: "error", content: "Video generation returned no result" };
+        yield { type: "complete", content: "Generation failed" };
         return;
       }
       
       if (toolResult.success) {
-        // 直接使用toolResult中的segments（已包含videoUrl）
+        // Use the segments from toolResult (videoUrl included)
         const rawSegments = (toolResult.data?.segments as Array<{
           id?: number;
           script?: string;
@@ -449,7 +449,7 @@ export async function* chatNodeStream(
           duration?: number;
         }>) || [];
         
-        // 转换为符合ChatAgentState.segments类型的格式
+        // Convert to the ChatAgentState.segments shape
         const finalSegments: Array<{
           id: number;
           script: string;
@@ -472,7 +472,7 @@ export async function* chatNodeStream(
           duration: seg.duration || 4
         }));
         
-        console.log(`[Agent] 最终segments数量: ${finalSegments.length}`);
+        console.log(`[Agent] final segment count: ${finalSegments.length}`);
         finalSegments.forEach((seg, i) => {
           console.log(`[Agent] segment ${i+1}: id=${seg.id}, videoUrl=${redactUrl(seg.videoUrl)}, hasVideo=${!!seg.videoUrl}`);
         });
@@ -483,11 +483,11 @@ export async function* chatNodeStream(
           currentStage: "video_generated"
         };
         
-        // 发送state_update事件，包含完整的segments（已有videoUrl）
-        console.log(`[Agent] yield state_update事件: segments=${finalSegments.length}个, stage=video_generated, 包含videoUrl`);
-        // 输出完整的videoUrl确认不被截断
+        // Send state_update with the complete segments (videoUrl included)
+        console.log(`[Agent] yield state_update: segments=${finalSegments.length}, stage=video_generated, with videoUrl`);
+        // Log the redacted videoUrl
         finalSegments.forEach((seg, i) => {
-          console.log(`[Agent] state_update segment[${i}]完整videoUrl: ${redactUrl(seg.videoUrl)}`);
+          console.log(`[Agent] state_update segment[${i}] videoUrl: ${redactUrl(seg.videoUrl)}`);
         });
         yield {
           type: "state_update",
@@ -499,13 +499,13 @@ export async function* chatNodeStream(
           }
         };
         
-        // 发送tool_result事件
+        // Send tool_result
         yield {
           type: "tool_result",
           content: {
             tool: "generateVideoSegments",
             success: true,
-            message: `分段视频生成完成，共 ${finalSegments.length} 个`,
+            message: `Generated ${finalSegments.length} video segments`,
             data: {
               segments: finalSegments,
               currentStage: "video_generated"
@@ -513,11 +513,11 @@ export async function* chatNodeStream(
           }
         };
         
-        // 发送等待反馈事件
+        // Send wait_feedback
         yield {
           type: "wait_feedback",
           content: {
-            message: "分段视频已生成完成，请确认后合成完整视频。",
+            message: "The video segments are ready. Confirm them to compose the final video.",
             state: {
               segments: finalSegments,
               currentStage: "video_generated",
@@ -526,59 +526,59 @@ export async function* chatNodeStream(
           }
         };
         
-        yield { type: "complete", content: "分段视频生成完成" };
+        yield { type: "complete", content: "Video segments generated" };
         return;
       } else {
-        yield { type: "error", content: toolResult.message || "生成分段视频失败" };
-        yield { type: "complete", content: "生成失败" };
+        yield { type: "error", content: toolResult.message || "Video segment generation failed" };
+        yield { type: "complete", content: "Generation failed" };
         return;
       }
     }
   }
   
-  // 最多执行 5 轮工具调用，防止无限循环
+  // At most 5 tool rounds to avoid infinite loops
   const MAX_ROUNDS = 5;
   let currentRound = 0;
   
   while (currentRound < MAX_ROUNDS) {
     currentRound++;
-    console.log(`[Agent] 第 ${currentRound} 轮执行`);
+    console.log(`[Agent] round ${currentRound}`);
     
-    // 构建状态上下文（添加明确的下一步指令）
+    // Build the state context with an explicit next-step hint
     let nextActionHint = "";
     if (currentState.finalVideoUrl) {
-      nextActionHint = "【重要】最终视频已生成，流程结束。回复用户'视频已完成，可以下载使用'，不再调用任何工具。";
+      nextActionHint = "IMPORTANT: the final video exists and the flow is over. Reply 'Your video is ready to download' and call no tools.";
     } else if (currentState.segments && currentState.segments.length > 0) {
-      nextActionHint = "【重要】视频片段已生成，用户说'合成/确认合成'时，必须调用 composeFinalVideo，绝不能再次调用 generateVideoSegments。";
+      nextActionHint = "IMPORTANT: segments exist. When the user says compose/confirm, call composeFinalVideo and never generateVideoSegments again.";
     } else if (currentState.scripts && currentState.scripts.length > 0 && currentState.currentStage === "script_generated") {
-      nextActionHint = "【重要】文案已生成，等待用户确认。用户说'确认/生成视频'时，调用 generateVideoSegments。";
+      nextActionHint = "IMPORTANT: the script exists and awaits confirmation. When the user confirms or asks for the video, call generateVideoSegments.";
     } else if (currentState.productName && currentState.currentStage === "product_identified") {
-      nextActionHint = "【重要】商品已识别，自动调用 generateScripts 生成文案。";
+      nextActionHint = "IMPORTANT: the product is identified; call generateScripts automatically.";
     }
     
     const stateContext = `
-## 当前状态
-- 商品图片: ${currentState.productImageUrl || "未上传"}
-- 商品名称: ${currentState.productName || "未知"}
-- 商品卖点: ${currentState.features?.join("、") || "未提取"}
-- 文案数量: ${currentState.scripts?.length || 0}段
-- 视频片段: ${currentState.segments?.length || 0}个
-- 最终视频: ${currentState.finalVideoUrl || "未生成"}
-- 当前阶段: ${currentState.currentStage}
+## Current state
+- Product image: ${currentState.productImageUrl || "not uploaded"}
+- Product name: ${currentState.productName || "unknown"}
+- Selling points: ${currentState.features?.join(", ") || "none yet"}
+- Script scenes: ${currentState.scripts?.length || 0}
+- Video segments: ${currentState.segments?.length || 0}
+- Final video: ${currentState.finalVideoUrl || "not generated"}
+- Current stage: ${currentState.currentStage}
 
 ${nextActionHint}
 `;
     
-    // 每轮重新构建系统提示词 + 状态上下文
+    // Rebuild system prompt + state context every round
     const systemMessage = {
       role: "system" as const,
       content: SYSTEM_PROMPT + stateContext
     };
     
-    // 第二轮及以上不再发送重复的进度消息，工具执行前已有进度提示
+    // Later rounds skip the duplicate progress message
     
-    // 流式调用 LLM
-    console.log(`[Agent] 第 ${currentRound} 轮流式调用 LLM...`);
+    // Stream the LLM
+    console.log(`[Agent] round ${currentRound}: streaming LLM...`);
     const stream = llmClient.stream([systemMessage, ...conversationHistory], {
       model: "doubao-seed-1-8-251228",
       temperature: 0.8
@@ -586,7 +586,7 @@ ${nextActionHint}
     
     let fullContent = "";
     
-    // 收集 LLM 输出但不立即 yield（过滤工具调用格式）
+    // Collect LLM output without yielding yet (tool-call syntax is filtered)
     for await (const chunk of stream) {
       if (chunk.content) {
         const text = chunk.content.toString();
@@ -594,51 +594,51 @@ ${nextActionHint}
       }
     }
     
-    // 检查是否有工具调用
+    // Check for a tool call
     const toolCall = parseToolCall(fullContent);
     
-    // 过滤掉工具调用格式，只提取有意义的文本
+    // Strip tool-call syntax, keep meaningful text
     let meaningfulText = fullContent;
     if (toolCall) {
-      // 移除工具调用格式部分
+      // Remove the tool-call block
       meaningfulText = fullContent.replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '').trim();
     }
     
-    // 只 yield 有意义的文本（非空且没有工具调用）
-    // 注意：如果有工具调用，不yield文本内容，避免在视频生成时显示文案
+    // Only yield meaningful text (non-empty, no tool call)
+    // With a tool call, text is not yielded so scripts are not shown during generation
     if (meaningfulText && meaningfulText.length > 0 && !toolCall) {
       yield { type: "text", content: meaningfulText };
     }
     
     if (!toolCall) {
-      // 没有工具调用，对话结束
-      console.log("[Agent] 无工具调用，对话结束");
-      yield { type: "complete", content: "对话完成" };
+      // No tool call: the turn ends
+      console.log("[Agent] no tool call, turn complete");
+      yield { type: "complete", content: "Done" };
       return;
     }
     
-    console.log(`[Agent] 第 ${currentRound} 轮检测到工具调用:`, toolCall.tool);
+    console.log(`[Agent] round ${currentRound} tool call:`, toolCall.tool);
     
-    // 发送进度提示（而不是工具调用格式）
+    // Send a progress hint instead of the tool-call syntax
     const toolProgressMessage = getToolProgressMessage(toolCall.tool, state);
     yield { type: "progress", content: toolProgressMessage };
     
-    // 创建事件队列，用于收集工具执行过程中的实时事件
+    // Event queue for live events during tool execution
     const eventQueue: AgentSSEMessage[] = [];
     
-    // 执行工具（传递回调函数，用于实时收集事件）
+    // Execute the tool with a callback collecting live events
     const toolResult = await executeTool(
       toolCall.tool,
       toolCall.input,
       currentState,
       customHeaders,
       (event) => {
-        // 将实时事件推入队列
+        // Queue live events
         eventQueue.push(event);
       }
     );
     
-    // 从队列中yield实时事件（segment_video等）
+    // Yield queued live events (segment_video etc.)
     for (const event of eventQueue) {
       yield event;
     }
@@ -646,16 +646,16 @@ ${nextActionHint}
     const segmentsLength = (toolResult.data as Record<string, unknown>)?.segments 
       ? ((toolResult.data as Record<string, unknown>).segments as Array<unknown>).length 
       : 0;
-    console.log(`[Agent] 工具 ${toolCall.tool} 执行完成: success=${toolResult.success}, segments=${segmentsLength}, 实时事件数=${eventQueue.length}`);
+    console.log(`[Agent] tool ${toolCall.tool} finished: success=${toolResult.success}, segments=${segmentsLength}, liveEvents=${eventQueue.length}`);
     
-    // 更新状态
+    // Update state
     if (toolResult.data) {
       currentState = { ...currentState, ...toolResult.data };
       const currentSegmentsLength = currentState.segments?.length || 0;
-      console.log(`[Agent] currentState 更新后: segments=${currentSegmentsLength}, stage=${currentState.currentStage}`);
+      console.log(`[Agent] currentState updated: segments=${currentSegmentsLength}, stage=${currentState.currentStage}`);
     }
     
-    // 发送工具执行结果（简洁消息）
+    // Send the tool result (short message)
     yield { type: "tool_result", content: toolResult.message, data: toolResult.data };
     
     if (!toolResult.success) {
@@ -663,51 +663,51 @@ ${nextActionHint}
       return;
     }
     
-    // 将工具结果添加到对话历史
+    // Add the tool result to the history
     conversationHistory.push({
       role: "assistant",
       content: fullContent
     });
     conversationHistory.push({
       role: "user",
-      content: `工具 ${toolCall.tool} 执行结果：${toolResult.message}\n\n状态更新：${JSON.stringify(toolResult.data || {})}`
+      content: `Tool ${toolCall.tool} result: ${toolResult.message}\n\nState update: ${JSON.stringify(toolResult.data || {})}`
     });
     
-    // 检查是否需要等待用户反馈
+    // Check whether to wait for feedback
     const newStage = currentState.currentStage;
     if (WAIT_FOR_USER_FEEDBACK_STAGES.includes(newStage)) {
-      console.log(`[Agent] 阶段 ${newStage} 需要等待用户反馈`);
+      console.log(`[Agent] stage ${newStage} waits for user feedback`);
       yield { 
         type: "wait_feedback", 
-        content: "等待用户反馈",
+        content: "Waiting for your feedback",
         data: { stage: newStage, state: currentState }
       };
       return;
     }
     
-    // 发送状态更新
+    // Send the state update
     yield {
       type: "state_update",
       content: currentState as unknown as Record<string, unknown>
     };
     
-    // 检查是否有自动执行的下一步
+    // Check for an automatic next step
     const nextTool = AUTO_NEXT_TOOL[toolCall.tool];
     if (nextTool) {
-      console.log(`[Agent] 自动执行下一步: ${nextTool}`);
-      // 发送继续信号，让前端知道正在自动执行下一步
+      console.log(`[Agent] auto next step: ${nextTool}`);
+      // Tell the frontend the next step runs automatically
       yield {
         type: "progress",
-        content: `正在自动执行下一步: ${nextTool}`,
+        content: `Continuing automatically: ${nextTool}`,
         data: { nextTool }
       };
     }
   }
   
-  // 超过最大轮数
-  console.log("[Agent] 达到最大执行轮数");
-  yield { type: "complete", content: "执行完成" };
+  // Max rounds exceeded
+  console.log("[Agent] max rounds reached");
+  yield { type: "complete", content: "Finished" };
 }
 
-// 导出
+// Exports
 export { SYSTEM_PROMPT, parseToolCall, executeTool };

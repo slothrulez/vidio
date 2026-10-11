@@ -9,38 +9,38 @@ export async function POST(request: NextRequest) {
     const { imageUrl } = body;
 
     if (!imageUrl) {
-      return NextResponse.json({ error: '缺少图片URL' }, { status: 400 });
+      return NextResponse.json({ error: 'Missing image URL' }, { status: 400 });
     }
 
     const customHeaders = HeaderUtils.extractForwardHeaders(request.headers);
     const config = new Config();
     const client = new LLMClient(config, customHeaders);
 
-    // 使用 LLM 分析图片
-    const systemPrompt = `你是一个专业的电商商品分析专家。请分析用户上传的商品图片，识别出商品信息。
+    // Analyse the image with the LLM
+    const systemPrompt = `You are an e-commerce product analyst. Analyse the uploaded product image and identify the product, answering in English.
 
-你需要返回以下信息（JSON格式）：
-1. productName: 商品名称，简洁明了，不超过10个字
-2. productType: 商品类型，如：保温杯、婴儿车、手机壳、充电宝等，不超过6个字
-3. materials: 商品材质数组，包含1-3种材质（如：304不锈钢、玻璃、PP塑料、硅胶、陶瓷、铝合金、实木等）
-4. features: 商品特点数组，包含3-5个特点，每个特点不超过6个字（如：便携轻便、防水防尘、保温保冷、易清洗等）
+Return JSON with:
+1. productName: a concise product name, at most 5 words
+2. productType: the product type (e.g. insulated bottle, stroller, phone case, power bank), at most 3 words
+3. materials: 1-3 materials (e.g. 304 stainless steel, glass, PP plastic, silicone, ceramic, aluminium alloy, solid wood)
+4. features: 3-5 features of at most 3 words each (e.g. lightweight, waterproof, keeps drinks hot, easy to clean)
 
-返回格式示例：
+Example:
 {
-  "productName": "智能保温杯",
-  "productType": "保温杯",
-  "materials": ["304不锈钢", "PP塑料"],
-  "features": ["保温保冷", "便携轻便", "防漏设计", "大容量"]
+  "productName": "Smart insulated bottle",
+  "productType": "Insulated bottle",
+  "materials": ["304 stainless steel", "PP plastic"],
+  "features": ["Keeps drinks hot", "Lightweight", "Leak-proof", "Large capacity"]
 }
 
-只返回JSON，不要包含其他内容。`;
+Return only the JSON.`;
 
     const messages: Message[] = [
       { role: 'system', content: systemPrompt },
       {
         role: 'user',
         content: [
-          { type: 'text', text: '请分析这张商品图片，识别商品名称、类型、材质和特点。' },
+          { type: 'text', text: 'Analyse this product image and identify its name, type, materials and features. Answer in English.' },
           {
             type: 'image_url',
             image_url: {
@@ -59,10 +59,10 @@ export async function POST(request: NextRequest) {
 
     const content = response.content || '';
     
-    // 解析 JSON
+    // Parse JSON
     let analysisResult;
     try {
-      // 尝试提取 JSON
+      // Extract JSON
       const jsonMatch = content.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         analysisResult = JSON.parse(jsonMatch[0]);
@@ -70,26 +70,26 @@ export async function POST(request: NextRequest) {
         analysisResult = JSON.parse(content);
       }
     } catch {
-      // 如果解析失败，返回默认值
+      // Defaults when parsing fails
       analysisResult = {
-        productName: '未识别商品',
+        productName: 'Unidentified product',
         productType: '',
         materials: [],
-        features: ['高品质', '实用设计', '性价比高'],
+        features: ['High quality', 'Practical design', 'Great value'],
       };
     }
 
     return NextResponse.json({
       success: true,
-      productName: analysisResult.productName || '未识别商品',
+      productName: analysisResult.productName || 'Unidentified product',
       productType: analysisResult.productType || '',
       materials: analysisResult.materials || [],
-      features: analysisResult.features || ['高品质', '实用设计', '性价比高'],
+      features: analysisResult.features || ['High quality', 'Practical design', 'Great value'],
     });
   } catch (error) {
-    console.error('图片分析失败:', safeLogError(error));
+    console.error('Image analysis failed:', safeLogError(error));
     return NextResponse.json(
-      { error: '图片分析失败，请重试' },
+      { error: 'Image analysis failed, please retry' },
       { status: 500 }
     );
   }

@@ -58,7 +58,7 @@ export async function createProject(
   owner: string,
   input: {
     name: string;
-    language: "english" | "mandarin" | "cantonese";
+    language: "english";
     ratio: "16:9" | "9:16" | "1:1";
   },
 ) {
