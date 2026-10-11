@@ -79,17 +79,6 @@ test("empty and loading states create English-only stories in 16:9 or 9:16", asy
   await waitFor(() => assert.deepEqual(calls.find((call) => call.name === "create_project")?.args,
     { name: "Travel mug", language: "english", ratio: "9:16" }));
 });
-test("historical non-English projects are not silently converted or rendered as English", async () => {
-  const project = fixture();
-  project.language = "mandarin";
-  project.scripts[0].script = "历史脚本";
-  const { api, calls } = transport(project);
-  render(<EmbeddedStudio transport={api} incoming={response(project)} />);
-  await screen.findByText(/Create a new English project; the original is unchanged/);
-  assert.equal(screen.queryByDisplayValue("历史脚本"), null);
-  assert.equal(screen.queryByRole("button", { name: "Generate labelled sample scenes" }), null);
-  assert.equal(calls.some((call) => call.name === "start_video_job"), false);
-});
 test("explicit review and a separate confirmation are required before generation", async () => {
   const project = fixture(),
     { api, calls } = transport(project);

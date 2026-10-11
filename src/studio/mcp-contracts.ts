@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { schemas, executeTool, type ToolName } from "./service";
-import { compositionOptionsSchema, operations, StudioError, type ToolOutput } from "./types";
-import { getProject, getJob } from "./store";
+import { compositionOptionsSchema, StudioError, type ToolOutput } from "./types";
+import { getProject } from "./store";
 import { database } from "./db";
 import { studioMode } from "./config";
 import { randomUUID } from "node:crypto";
@@ -41,17 +41,9 @@ export const mcpSchemas = {
 };
 export type McpToolName = keyof typeof mcpSchemas;
 
-async function requireEnglishProject(owner: string, projectId: string) {
-  const project = await getProject(owner, projectId);
-  if (project.language !== "english")
-    throw new StudioError("LANGUAGE", "Create a new English project to use the MCP studio. Your existing project is unchanged.");
-}
-
 async function grantConsent(owner: string, args: unknown): Promise<{ structuredContent: ToolOutput }> {
   const consent = consentSchema.parse(args);
   const project = await getProject(owner, consent.projectId);
-  if (project.language !== "english")
-    throw new StudioError("LANGUAGE", "Create a new English project to use the MCP studio. Your existing project is unchanged.");
   if (project.revision !== consent.revision)
     throw new StudioError("REVISION", "The project changed; review the latest revision before approving", 409);
   await database().query(
@@ -113,18 +105,10 @@ export async function executeMcpTool(owner: string, name: McpToolName, args: unk
   const target: ToolName = name in aliases
     ? aliases[name as keyof typeof aliases]
     : name as ToolName;
-  if ((operations.some((operation) => operation === target) || ["save_scripts", "update_script", "begin_image_upload"].includes(target)) && "projectId" in input && typeof input.projectId === "string")
-    await requireEnglishProject(owner, input.projectId);
   if (consentOperations.some((operation) => operation === name)) {
     if (!consentToken)
       throw new StudioError("CONSENT", "Approve this paid step in the vidio studio first; a model-declared confirmation is not sufficient", 409);
     await consumeConsent(owner, consentToken, name, input as unknown as { projectId: string; revision: number; idempotencyKey?: string });
-  }
-  if (["retry_job", "cancel_job"].includes(target) && "jobId" in input && typeof input.jobId === "string")
-    await requireEnglishProject(owner, (await getJob(owner, input.jobId)).projectId);
-  if ("uploadId" in input && typeof input.uploadId === "string") {
-    const upload = await database().query("SELECT project_id FROM vidio_image_uploads WHERE id=$1 AND owner_id=$2", [input.uploadId, owner]);
-    if (upload.rows.length) await requireEnglishProject(owner, upload.rows[0].project_id);
   }
   const result = await executeTool(owner, target, input);
   const job = result.structuredContent.job;

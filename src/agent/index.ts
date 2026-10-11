@@ -1,5 +1,5 @@
 /**
- * Agent 模块入口
+ * Agent module entry
  */
 
 export { AgentState } from "./state";

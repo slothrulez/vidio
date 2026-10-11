@@ -6,7 +6,7 @@ export async function GET(request: NextRequest) {
   const filename = request.nextUrl.searchParams.get('filename') || 'video.mp4';
   
   if (!videoUrl) {
-    return NextResponse.json({ error: '缺少视频URL' }, { status: 400 });
+    return NextResponse.json({ error: 'Missing video URL' }, { status: 400 });
   }
   
   try {
@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
     
     if (!response.ok) {
       return NextResponse.json({ 
-        error: `获取视频失败: ${response.status}` 
+        error: `Video fetch failed: ${response.status}`
       }, { status: response.status });
     }
     
@@ -37,9 +37,9 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('下载视频失败:', safeLogError(error));
+    console.error('Video download failed:', safeLogError(error));
     return NextResponse.json({ 
-      error: '下载视频失败' 
+      error: 'Video download failed'
     }, { status: 500 });
   }
 }

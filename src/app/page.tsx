@@ -33,21 +33,21 @@ import {
 } from 'lucide-react';
 
 // Keep persisted keys stable so existing avatars and sessions survive rebranding.
-// 用户头像本地存储key
+// Local storage key for the user avatar
 const USER_AVATAR_STORAGE_KEY = 'huxiaoying_user_avatar';
 
-// 会话存储key
+// Local storage key for sessions
 const SESSIONS_STORAGE_KEY = 'huxiaoying_sessions';
 
-// 后台任务状态类型
+// Background task state
 interface BackgroundTask {
-  sessionId: string; // 会话ID（用于标识任务属于哪个会话）
-  abortController: AbortController; // 用于取消请求
-  status: 'running' | 'completed' | 'failed' | 'cancelled'; // 任务状态
-  startedAt: string; // 开始时间
+  sessionId: string; // Session the task belongs to
+  abortController: AbortController; // Cancels the request
+  status: 'running' | 'completed' | 'failed' | 'cancelled'; // Task status
+  startedAt: string; // Start time
 }
 
-// 会话类型定义
+// Session type
 interface Session {
   id: string;
   title: string;
@@ -61,13 +61,13 @@ interface Session {
   };
   createdAt: string;
   updatedAt: string;
-  isGenerating?: boolean; // 是否正在生成中（后台任务运行）
-  backendSessionId?: string; // 后端会话ID（用于恢复后端状态）
-  voiceLanguage?: string; // 配音语言（每个会话独立）
-  videoRatio?: '16:9' | '9:16'; // 视频比例（每个会话独立，默认16:9）
+  isGenerating?: boolean; // Whether a background task is running
+  backendSessionId?: string; // Backend session ID used to restore server state
+  voiceLanguage?: string; // Voiceover language (per session)
+  videoRatio?: '16:9' | '9:16'; // Video ratio (per session, default 16:9)
 }
 
-// 滚动到底部悬浮按钮组件
+// Floating scroll-to-bottom button
 function ScrollToBottomButton({
   onClick,
   isAtBottom,
@@ -94,7 +94,7 @@ function ScrollToBottomButton({
   );
 }
 
-// 用户头像组件
+// User avatar component
 function UserAvatar({
   avatarUrl,
   onUpload,
@@ -119,7 +119,7 @@ function UserAvatar({
     if (file) {
       await onUpload(file);
     }
-    e.target.value = ''; // 清空以允许重复选择
+    e.target.value = ''; // Reset so the same file can be chosen again
   };
 
   const handleContextMenu = (e: React.MouseEvent) => {
@@ -135,14 +135,14 @@ function UserAvatar({
       onMouseEnter={() => setShowTooltip(true)}
       onMouseLeave={() => setShowTooltip(false)}
     >
-      {/* 头像容器 */}
+      {/* Avatar container */}
       <button
         onClick={handleClick}
         onContextMenu={handleContextMenu}
         disabled={isUploading}
         className={`w-9 h-9 rounded-full overflow-hidden border-2 border-white/50 shadow-sm
           transition-all duration-200 ${isUploading ? 'cursor-default' : 'hover:border-blue-300 hover:shadow-md cursor-pointer'}`}
-        title="右键恢复默认头像"
+        title="Right-click to restore the default avatar"
       >
         {isUploading ? (
           <div className="w-full h-full bg-gray-200 flex items-center justify-center">
@@ -151,7 +151,7 @@ function UserAvatar({
         ) : avatarUrl ? (
           <img 
             src={avatarUrl} 
-            alt="用户头像" 
+            alt="User avatar"
             className="w-full h-full object-cover"
           />
         ) : (
@@ -161,16 +161,16 @@ function UserAvatar({
         )}
       </button>
 
-      {/* hover提示 */}
+      {/* Hover hint */}
       {showTooltip && !isUploading && (
         <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 z-50">
           <div className="bg-gray-800 text-white text-xs px-2 py-1 rounded shadow-lg whitespace-nowrap">
-            {avatarUrl ? '点击更换头像 · 右键恢复默认' : '点击上传头像'}
+            {avatarUrl ? 'Click to change avatar · right-click to reset' : 'Click to upload an avatar'}
           </div>
         </div>
       )}
 
-      {/* 隐藏的文件输入 */}
+      {/* Hidden file input */}
       <input
         ref={fileInputRef}
         type="file"
@@ -182,10 +182,9 @@ function UserAvatar({
   );
 }
 
-// 配音语言选择器组件
+// Voiceover language selector
 const VOICE_LANGUAGES = [
-  { code: 'mandarin', label: '普通话', ttsVoice: 'zh_female_mizai_saturn_bigtts' },
-  { code: 'english', label: '英语', ttsVoice: 'zh_female_vv_uranus_bigtts' },
+  { code: 'english', label: 'English', ttsVoice: 'zh_female_vv_uranus_bigtts' },
 ];
 
 function LanguageSelector({
@@ -200,7 +199,7 @@ function LanguageSelector({
 
   const handleSelect = (langCode: string) => {
     onChange(langCode);
-    // 语言现在绑定到会话，会话保存时会自动保存到localStorage
+    // The language is bound to the session and persisted with it in localStorage
     setIsOpen(false);
   };
 
@@ -210,7 +209,7 @@ function LanguageSelector({
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center gap-1 px-2 py-1 text-xs text-[#666666] hover:text-[#333333] hover:bg-[#F1F3F5] rounded transition-colors"
       >
-        <span className="font-medium">配音语言：</span>
+        <span className="font-medium">Voiceover language:</span>
         <span>{currentLang.label}</span>
         <ChevronDown className="w-3 h-3" />
       </button>
@@ -234,7 +233,7 @@ function LanguageSelector({
   );
 }
 
-// 会话侧边栏组件
+// Session sidebar
 function SessionSidebar({
   sessions,
   currentSessionId,
@@ -259,7 +258,7 @@ function SessionSidebar({
   const [openLangDropdownId, setOpenLangDropdownId] = useState<string | null>(null);
   const [openRatioDropdownId, setOpenRatioDropdownId] = useState<string | null>(null);
 
-  // 分组会话：今天、最近
+  // Group sessions: today and earlier
   const groupSessions = () => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -290,7 +289,7 @@ function SessionSidebar({
     setEditingTitle('');
   };
 
-  // 点击外部关闭语言下拉
+  // Close the language dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = () => {
       setOpenLangDropdownId(null);
@@ -329,30 +328,30 @@ function SessionSidebar({
           />
         ) : (
           <div className="flex flex-col h-full min-h-[80px]">
-            {/* 第一行：左上方会话名称 */}
+            {/* Row 1: session title */}
             <div className="flex items-center">
               <div className="text-sm font-medium truncate text-[#333333]">{session.title}</div>
             </div>
             
-            {/* 第二行：左侧状态和时间 */}
+            {/* Row 2: status and time */}
             <div className="flex justify-start items-center gap-2 mt-1">
               {session.isGenerating && (
                 <span className="text-xs text-[#757575] flex items-center gap-1">
                   <Loader2 className="w-3 h-3 animate-spin" />
-                  生成中
+                  Generating
                 </span>
               )}
               <span className="text-xs text-[#757575]">
-                {new Date(session.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+                {new Date(session.createdAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
               </span>
             </div>
             
-            {/* 中间空白区域 */}
+            {/* Spacer */}
             <div className="flex-1" />
             
-            {/* 第三行：右下方语言选项 */}
+            {/* Row 3: language option */}
             <div className="flex justify-end">
-              {/* 语言选项 */}
+              {/* Language option */}
               <div className="relative">
                 <button
                   onClick={(e) => {
@@ -360,13 +359,13 @@ function SessionSidebar({
                     setOpenLangDropdownId(openLangDropdownId === session.id ? null : session.id);
                   }}
                   className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-[#FF8A80] text-white hover:bg-[#FF7060] shadow-sm transition-colors"
-                  title="选择配音语言"
+                  title="Voiceover language"
                 >
                   <Globe className="w-3.5 h-3.5" />
-                  <span>{session.voiceLanguage === 'english' ? '英语' : '普通话'}</span>
+                  <span>English</span>
                 </button>
                 
-                {/* 下拉选择 */}
+                {/* Dropdown */}
                 {openLangDropdownId === session.id && (
                   <div 
                     className="absolute right-0 top-full mt-1 bg-white rounded-md shadow-lg border border-[#E5E5E5] z-50 min-w-[80px]"
@@ -374,30 +373,21 @@ function SessionSidebar({
                   >
                     <button
                       onClick={() => {
-                        onUpdateSessionVoiceLanguage(session.id, 'mandarin');
-                        setOpenLangDropdownId(null);
-                      }}
-                      className={`w-full text-left px-3 py-2 text-xs hover:bg-[#F5F0FF] rounded-t-md ${session.voiceLanguage === 'mandarin' ? 'text-[#7E22CE] font-medium' : 'text-[#666666]'}`}
-                    >
-                      普通话
-                    </button>
-                    <button
-                      onClick={() => {
                         onUpdateSessionVoiceLanguage(session.id, 'english');
                         setOpenLangDropdownId(null);
                       }}
-                      className={`w-full text-left px-3 py-2 text-xs hover:bg-[#F5F0FF] rounded-b-md ${session.voiceLanguage === 'english' ? 'text-[#7E22CE] font-medium' : 'text-[#666666]'}`}
+                      className={`w-full text-left px-3 py-2 text-xs hover:bg-[#F5F0FF] rounded-md ${session.voiceLanguage === 'english' ? 'text-[#7E22CE] font-medium' : 'text-[#666666]'}`}
                     >
-                      英语
+                      English
                     </button>
                   </div>
                 )}
               </div>
             </div>
             
-            {/* 第四行：右下方视频比例选项 */}
+            {/* Row 4: video ratio option */}
             <div className="flex justify-end mt-1">
-              {/* 视频比例选项 */}
+              {/* Video ratio option */}
               <div className="relative">
                 <button
                   onClick={(e) => {
@@ -405,13 +395,13 @@ function SessionSidebar({
                     setOpenRatioDropdownId(openRatioDropdownId === session.id ? null : session.id);
                   }}
                   className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-[#FF8A80] text-white hover:bg-[#FF7060] shadow-sm transition-colors"
-                  title="选择视频比例"
+                  title="Choose video ratio"
                 >
                   <RectangleHorizontal className="w-3.5 h-3.5" />
-                  <span>{session.videoRatio === '9:16' ? '竖版' : '横版'}</span>
+                  <span>{session.videoRatio === '9:16' ? 'Portrait' : 'Landscape'}</span>
                 </button>
                 
-                {/* 下拉选择 */}
+                {/* Dropdown */}
                 {openRatioDropdownId === session.id && (
                   <div 
                     className="absolute right-0 top-full mt-1 bg-white rounded-md shadow-lg border border-[#E5E5E5] z-50 min-w-[80px]"
@@ -424,7 +414,7 @@ function SessionSidebar({
                       }}
                       className={`w-full text-left px-3 py-2 text-xs hover:bg-[#F5F0FF] rounded-t-md ${session.videoRatio === '16:9' || !session.videoRatio ? 'text-[#7E22CE] font-medium' : 'text-[#666666]'}`}
                     >
-                      横版 16:9
+                      Landscape 16:9
                     </button>
                     <button
                       onClick={() => {
@@ -433,7 +423,7 @@ function SessionSidebar({
                       }}
                       className={`w-full text-left px-3 py-2 text-xs hover:bg-[#F5F0FF] rounded-b-md ${session.videoRatio === '9:16' ? 'text-[#7E22CE] font-medium' : 'text-[#666666]'}`}
                     >
-                      竖版 9:16
+                      Portrait 9:16
                     </button>
                   </div>
                 )}
@@ -442,7 +432,7 @@ function SessionSidebar({
           </div>
         )}
 
-        {/* hover操作图标 */}
+        {/* Hover actions */}
         {!isEditing && (
           <div className="absolute right-2 top-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
             <button
@@ -451,7 +441,7 @@ function SessionSidebar({
                 handleStartEdit(session);
               }}
               className="p-1 hover:bg-[#F1F3F5] rounded text-[#7A7A7A] hover:text-[#333333]"
-              title="重命名"
+              title="Rename"
             >
               <Pencil className="w-3 h-3" />
             </button>
@@ -461,7 +451,7 @@ function SessionSidebar({
                 onDeleteSession(session.id);
               }}
               className="p-1 hover:bg-red-500/20 rounded text-[#7A7A7A] hover:text-red-500"
-              title="删除"
+              title="Delete"
             >
               <Trash2 className="w-3 h-3" />
             </button>
@@ -473,7 +463,7 @@ function SessionSidebar({
 
   return (
     <div className="w-[260px] h-full bg-gradient-to-b from-[#F5E6D3] to-[#FFFFFF] flex flex-col border-r border-[#E5E5E5]">
-      {/* vidio Logo区域 */}
+      {/* vidio logo */}
       <div className="p-4 flex items-center gap-3">
         <NextImage
           src="/assets/agent-avatar.png" 
@@ -484,11 +474,11 @@ function SessionSidebar({
         />
         <div className="flex flex-col">
           <span className="text-[#333333] font-semibold text-lg">vidio</span>
-          <span className="text-[#666666] text-sm">带货视频智能助手</span>
+          <span className="text-[#666666] text-sm">Product video assistant</span>
         </div>
       </div>
 
-      {/* 新建对话按钮 */}
+      {/* New chat button */}
       <div className="px-4 pb-4 pt-4 mt-2">
         <button
           onClick={onNewSession}
@@ -497,16 +487,16 @@ function SessionSidebar({
             transition-all duration-200 shadow-sm hover:shadow-md"
         >
           <Plus className="w-4 h-4" />
-          新建对话
+          New chat
         </button>
       </div>
 
-      {/* 会话列表 */}
+      {/* Session list */}
       <div className="flex-1 overflow-y-auto px-3 pb-4 space-y-4">
-        {/* 今天 */}
+        {/* Today */}
         {todaySessions.length > 0 && (
           <div>
-            <div className="text-xs text-[#999999] font-medium mb-2 px-1">今天</div>
+            <div className="text-xs text-[#999999] font-medium mb-2 px-1">Today</div>
             <div className="space-y-1">
               {todaySessions.map(session => (
                 <SessionItem key={session.id} session={session} />
@@ -515,10 +505,10 @@ function SessionSidebar({
           </div>
         )}
 
-        {/* 最近 */}
+        {/* Earlier */}
         {recentSessions.length > 0 && (
           <div>
-            <div className="text-xs text-[#999999] font-medium mb-2 px-1">最近</div>
+            <div className="text-xs text-[#999999] font-medium mb-2 px-1">Earlier</div>
             <div className="space-y-1">
               {recentSessions.map(session => (
                 <SessionItem key={session.id} session={session} />
@@ -527,11 +517,11 @@ function SessionSidebar({
           </div>
         )}
 
-        {/* 空状态 */}
+        {/* Empty state */}
         {sessions.length === 0 && (
           <div className="text-center text-[#999999] py-8">
             <MessageSquare className="w-8 h-8 mx-auto mb-2 opacity-50" />
-            <p className="text-sm">暂无历史对话</p>
+            <p className="text-sm">No conversations yet</p>
           </div>
         )}
       </div>
@@ -539,39 +529,39 @@ function SessionSidebar({
   );
 }
 
-// 过滤系统命令 - 移除 [xxx] 格式的脚本文字
+// Strip system commands such as [xxx] from message text
 function filterSystemCommands(content: string): string {
-  // 移除 [GENERATE_SEGMENTS]、[COMPOSE_VIDEO] 等系统命令
+  // Remove [GENERATE_SEGMENTS], [COMPOSE_VIDEO] and similar commands
   return content
-    .replace(/\[[A-Z_]+\]\s*/g, '') // 移除大写字母下划线格式的命令
-    .replace(/\[[\u4e00-\u9fa5]+\]\s*/g, '') // 移除中文格式的命令（如 [开始生成]、[合成视频]）
+    .replace(/\[[A-Z_]+\]\s*/g, '') // Upper-case command tokens
+    .replace(/\[[\u4e00-\u9fa5]+\]\s*/g, '') // Legacy non-Latin command tokens
     .trim();
 }
 
-// 客户端时间组件 - 避免 hydration 问题
+// Client-side time component (avoids hydration mismatches)
 function ClientTime({ timestamp }: { timestamp: string }) {
   const [time, setTime] = useState<string>('');
   
   useEffect(() => {
-    setTime(new Date(timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }));
+    setTime(new Date(timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }));
   }, [timestamp]);
   
   return <span>{time || '--:--'}</span>;
 }
 
-// 消息类型
+// Message type
 interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   timestamp: string;
   imageUrl?: string;
-  auxiliaryImages?: string[]; // 辅助图片URL列表（多图片上传时）
+  auxiliaryImages?: string[]; // Additional image URLs for multi-image uploads
   isStreaming?: boolean;
   state?: Partial<SessionState>;
 }
 
-// 镜头片段状态
+// Scene segment state
 interface SegmentProgress {
   id: number;
   status: 'pending' | 'processing' | 'completed' | 'failed';
@@ -579,15 +569,15 @@ interface SegmentProgress {
   error?: string;
 }
 
-// 全局进度状态
+// Global progress state
 interface ProgressState {
-  currentStage: number; // 1-5 对应5个主阶段
+  currentStage: number; // 1-5, the five main stages
   stageName: string;
   estimatedTime?: string;
   segmentProgress?: SegmentProgress[];
 }
 
-// 会话状态
+// Session state
 interface SessionState {
   productImageUrl?: string;
   productName?: string;
@@ -608,27 +598,27 @@ interface SessionState {
   finalDuration?: number;
   currentStage?: 'idle' | 'identifying' | 'product_identified' | 'script_generated' | 'video_generating' | 'video_generated' | 'composing' | 'done';
   progress?: ProgressState;
-  // 视频比例：'16:9'横版 或 '9:16'竖版
+  // Video ratio: '16:9' landscape or '9:16' portrait
   videoRatio?: string;
-  // 暂存的商品图片（未发送）
+  // Staged product images (not yet sent)
   pendingImages?: Array<{ id: string; imageUrl: string; thumbnail?: string }>;
 }
 
-// 视频播放器组件（支持16:9横版和9:16竖版比例）
+// Video player (supports 16:9 landscape and 9:16 portrait)
 function VideoPlayer({
   videoUrl,
   localVideoPath,
   audioUrl,
   showControls = true,
   ratio = '16:9',
-  size = 'segment', // 默认分段视频尺寸
+  size = 'segment', // Default segment size
 }: {
   videoUrl?: string;
   localVideoPath?: string;
   audioUrl?: string;
   showControls?: boolean;
   ratio?: '16:9' | '9:16';
-  size?: 'segment' | 'final'; // 分段视频小，合成视频大
+  size?: 'segment' | 'final'; // Segments are small, the final video is large
 }) {
   const [videoError, setVideoError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -639,16 +629,16 @@ function VideoPlayer({
   const effectiveVideoUrl = localVideoPath || (videoUrl ? getAccessibleUrl(videoUrl) : '');
   const effectiveAudioUrl = audioUrl ? getAccessibleUrl(audioUrl) : '';
 
-  // 根据比例和尺寸确定样式
-  // 竖版视频：保持9:16比例，调整尺寸大小
+  // Pick styles from ratio and size
+  // Portrait: keep 9:16 and adjust the size
   const aspectClass = ratio === '9:16' 
     ? (size === 'final' 
-      ? 'aspect-[9/16] max-h-[50vh] w-auto' // 合成视频：保持比例，限制最大高度为窗口50%
-      : 'aspect-[9/16] w-[180px]' // 分段视频：保持比例，宽度180px（高度约320px）
+      ? 'aspect-[9/16] max-h-[50vh] w-auto' // Final video: keep ratio, cap height at 50% of the viewport
+      : 'aspect-[9/16] w-[180px]' // Segment: keep ratio, 180px wide (about 320px tall)
     )
-    : 'aspect-video max-w-full'; // 横版视频：标准比例
+    : 'aspect-video max-w-full'; // Landscape: standard ratio
 
-  // 点击播放按钮
+  // Play button click
   const handlePlayClick = useCallback(() => {
     if (videoRef.current) {
       videoRef.current.play();
@@ -656,19 +646,19 @@ function VideoPlayer({
     }
   }, []);
 
-  // 监听全屏变化，防止退出全屏时页面刷新导致状态丢失
+  // Watch fullscreen changes so leaving fullscreen never reloads and loses state
   useEffect(() => {
     const handleFullscreenChange = () => {
-      // 全屏退出时，确保不触发任何可能导致状态丢失的操作
+      // Do nothing that could drop state when fullscreen exits
       if (!document.fullscreenElement) {
-        // 确保视频继续正常播放，不中断用户体验
-        console.log('[VideoPlayer] 退出全屏模式');
+        // Keep playback running without interrupting the user
+        console.log('[VideoPlayer] exited fullscreen');
       }
     };
 
     document.addEventListener('fullscreenchange', handleFullscreenChange);
-    document.addEventListener('webkitfullscreenchange', handleFullscreenChange); // Safari兼容
-    document.addEventListener('mozfullscreenchange', handleFullscreenChange); // Firefox兼容
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange); // Safari
+    document.addEventListener('mozfullscreenchange', handleFullscreenChange); // Firefox
 
     return () => {
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
@@ -677,7 +667,7 @@ function VideoPlayer({
     };
   }, []);
 
-  // 同步视频和音频播放
+  // Keep video and audio playback in sync
   const handlePlay = useCallback(() => {
     setIsPlaying(true);
     if (audioRef.current && videoRef.current) {
@@ -701,7 +691,7 @@ function VideoPlayer({
 
   const handleTimeUpdate = useCallback(() => {
     if (audioRef.current && videoRef.current) {
-      // 保持音视频同步（容差0.1秒）
+      // Keep audio and video aligned (0.1s tolerance)
       const diff = Math.abs(audioRef.current.currentTime - videoRef.current.currentTime);
       if (diff > 0.1) {
         audioRef.current.currentTime = videoRef.current.currentTime;
@@ -725,7 +715,7 @@ function VideoPlayer({
             onSeeked={handleSeeked}
             onTimeUpdate={handleTimeUpdate}
             onError={() => {
-              setVideoError('视频加载失败');
+              setVideoError('Video failed to load');
               setIsLoading(false);
             }}
             onCanPlay={() => {
@@ -733,7 +723,7 @@ function VideoPlayer({
               setVideoError(null);
             }}
           />
-          {/* 隐藏的音频元素，用于播放TTS音频 */}
+          {/* Hidden audio element for the TTS track */}
           {effectiveAudioUrl && (
             <audio
               ref={audioRef}
@@ -742,7 +732,7 @@ function VideoPlayer({
             />
           )}
           
-          {/* 悬浮播放按钮（仅当隐藏控制条且未播放时显示） */}
+          {/* Floating play button (only when controls are hidden and paused) */}
           {!showControls && !isPlaying && !isLoading && effectiveVideoUrl && (
             <button
               onClick={handlePlayClick}
@@ -756,7 +746,7 @@ function VideoPlayer({
         </>
       ) : (
         <div className="w-full h-full bg-gray-800 flex items-center justify-center">
-          <p className="text-gray-400 text-sm">视频生成中...</p>
+          <p className="text-gray-400 text-sm">Generating video...</p>
         </div>
       )}
       
@@ -775,13 +765,13 @@ function VideoPlayer({
   );
 }
 
-// 5阶段进度条组件
+// Five-stage progress bar
 const PROGRESS_STAGES = [
-  { key: 1, name: 'TTS音频生成', icon: 'mic' },
-  { key: 2, name: '视频画面生成', icon: 'video' },
-  { key: 3, name: '音视频合并', icon: 'merge' },
-  { key: 4, name: '整体拼接合成', icon: 'compose' },
-  { key: 5, name: '任务完成', icon: 'check' },
+  { key: 1, name: 'Voiceover audio', icon: 'mic' },
+  { key: 2, name: 'Video scenes', icon: 'video' },
+  { key: 3, name: 'Audio/video merge', icon: 'merge' },
+  { key: 4, name: 'Final composition', icon: 'compose' },
+  { key: 5, name: 'Done', icon: 'check' },
 ];
 
 function ProgressTracker({
@@ -799,11 +789,11 @@ function ProgressTracker({
 
   return (
     <div className="bg-white rounded-lg border border-[#E5E5E5] shadow-sm p-4 mb-4">
-      {/* 进度条 */}
+      {/* Progress bar */}
       <div className="flex items-center gap-2 mb-3">
         {PROGRESS_STAGES.map((stage, idx) => (
           <div key={stage.key} className="flex items-center flex-1">
-            {/* 阶段节点 */}
+            {/* Stage nodes */}
             <div className={`flex items-center justify-center w-8 h-8 rounded-full transition-all duration-300
               ${currentStage >= stage.key 
                 ? 'bg-gradient-to-r from-[#B999F3] to-[#D4C2F6] text-white' 
@@ -816,14 +806,14 @@ function ProgressTracker({
                 <Circle className="w-4 h-4" />
               )}
             </div>
-            {/* 阶段名称 */}
+            {/* Stage name */}
             <div className="ml-2 hidden sm:block">
               <span className={`text-xs font-medium transition-colors
                 ${currentStage >= stage.key ? 'text-[#B999F3]' : 'text-[#999999]'}`}>
                 {stage.name}
               </span>
             </div>
-            {/* 连接线 */}
+            {/* Connector */}
             {idx < PROGRESS_STAGES.length - 1 && (
               <div className={`flex-1 h-1 mx-2 rounded transition-all duration-300
                 ${currentStage > stage.key ? 'bg-gradient-to-r from-[#B999F3] to-[#D4C2F6]' : 'bg-[#E5E5E5]'}`} />
@@ -832,27 +822,27 @@ function ProgressTracker({
         ))}
       </div>
       
-      {/* 实时状态文字 */}
+      {/* Live status text */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Loader2 className="w-4 h-4 animate-spin text-[#B999F3]" />
           <span className="text-sm text-[#B999F3] font-medium">{stageName}</span>
         </div>
         {estimatedTime && (
-          <span className="text-xs text-[#666666]">预计等待 {estimatedTime}</span>
+          <span className="text-xs text-[#666666]">Estimated wait {estimatedTime}</span>
         )}
       </div>
     </div>
   );
 }
 
-// 镜头卡片状态标签组件
+// Scene card status badge
 function SegmentStatusBadge({ status }: { status: 'pending' | 'processing' | 'completed' | 'failed' }) {
   const statusConfig = {
-    pending: { color: 'text-[#999999]', bg: 'bg-[#F1F3F5]', icon: Circle, text: '待处理' },
-    processing: { color: 'text-[#B999F3]', bg: 'bg-[#ECE6F7]', icon: Loader2, text: '处理中' },
-    completed: { color: 'text-green-500', bg: 'bg-green-50', icon: CheckCircle2, text: '已完成' },
-    failed: { color: 'text-red-500', bg: 'bg-red-50', icon: AlertCircle, text: '失败' },
+    pending: { color: 'text-[#999999]', bg: 'bg-[#F1F3F5]', icon: Circle, text: 'Pending' },
+    processing: { color: 'text-[#B999F3]', bg: 'bg-[#ECE6F7]', icon: Loader2, text: 'Processing' },
+    completed: { color: 'text-green-500', bg: 'bg-green-50', icon: CheckCircle2, text: 'Completed' },
+    failed: { color: 'text-red-500', bg: 'bg-red-50', icon: AlertCircle, text: 'Failed' },
   };
 
   const config = statusConfig[status];
@@ -866,7 +856,7 @@ function SegmentStatusBadge({ status }: { status: 'pending' | 'processing' | 'co
   );
 }
 
-// 镜头文案卡片组件（支持编辑、状态标识、拖拽）
+// Scene script card (editable, with status and drag support)
 function ScriptCard({
   script,
   index,
@@ -917,7 +907,7 @@ function ScriptCard({
   const status = segmentStatus || 'pending';
   const disabled = isGenerating;
 
-  // 根据状态配置节点样式
+  // Node styles by status
   const nodeStyle = {
     pending: 'bg-[#ECE6F7] text-[#B999F3] border-2 border-[#D4C2F6]',
     processing: 'bg-[#B999F3] text-white border-2 border-[#D4C2F6]',
@@ -927,9 +917,9 @@ function ScriptCard({
 
   return (
     <div className="relative flex items-start gap-4 group">
-      {/* 左侧流程线 */}
+      {/* Left timeline */}
       <div className="flex flex-col items-center w-8 shrink-0">
-        {/* 圆形节点 */}
+        {/* Circle node */}
         <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium shrink-0 transition-all duration-300 ${nodeStyle[status]}`}>
           {status === 'processing' ? (
             <Loader2 className="w-4 h-4 animate-spin" />
@@ -941,37 +931,37 @@ function ScriptCard({
             index + 1
           )}
         </div>
-        {/* 连接线 */}
+        {/* Connector */}
         {!isLast && (
           <div className={`w-0.5 h-full mt-1 flex-1 min-h-[20px] transition-colors duration-300
             ${status === 'completed' ? 'bg-green-300' : 'bg-[#D4C2F6]'}`} />
         )}
       </div>
 
-      {/* 卡片主体 */}
+      {/* Card body */}
       <div className={`flex-1 bg-white rounded-xl border transition-all duration-200
         ${editingScript || editingPrompt ? 'border-[#D4C2F6] shadow-lg' : 'border-[#E5E5E5] shadow-sm group-hover:shadow-md'}
         ${disabled ? 'opacity-70' : ''}`}>
         
-        {/* 状态标签栏 */}
+        {/* Status bar */}
         <div className="flex items-center justify-between px-4 py-2 bg-[#F1F3F5] rounded-t-xl border-b border-[#E5E5E5]">
-          <span className="text-xs text-[#999999] font-medium">镜头 {index + 1}</span>
+          <span className="text-xs text-[#999999] font-medium">Scene {index + 1}</span>
           <SegmentStatusBadge status={status} />
         </div>
         
-        {/* 上半部分：镜头脚本编辑区 */}
+        {/* Top: scene description editor */}
         <div className="p-4 border-b border-[#E5E5E5]">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <Camera className="w-4 h-4 text-[#7A7A7A]" />
-              <span className="text-xs text-[#666666] font-medium">镜头描述</span>
+              <span className="text-xs text-[#666666] font-medium">Scene description</span>
             </div>
             {!editingPrompt && !disabled && (
               <button
                 onClick={() => setEditingPrompt(true)}
                 className="text-xs text-[#7A7A7A] hover:text-[#B999F3] transition-colors"
               >
-                编辑
+                Edit
               </button>
             )}
           </div>
@@ -983,20 +973,20 @@ function ScriptCard({
                 onChange={(e) => setPromptValue(e.target.value)}
                 className="w-full p-2 text-sm border border-[#E5E5E5] rounded-md focus:border-[#D4C2F6] focus:ring-1 focus:ring-[#D4C2F6] resize-none"
                 rows={4}
-                placeholder="输入镜头描述..."
+                placeholder="Describe the scene..."
               />
               <div className="flex justify-end gap-2">
                 <button
                   onClick={handleCancelPrompt}
                   className="px-2 py-1 text-xs text-[#666666] hover:bg-[#F1F3F5] rounded"
                 >
-                  取消
+                  Cancel
                 </button>
                 <button
                   onClick={handleSavePrompt}
                   className="px-2 py-1 text-xs bg-[#B999F3] text-white hover:bg-[#D4C2F6] rounded"
                 >
-                  保存
+                  Save
                 </button>
               </div>
             </div>
@@ -1005,15 +995,15 @@ function ScriptCard({
               onClick={() => !disabled && setEditingPrompt(true)}
               className={`text-xs text-[#666666] ${disabled ? 'cursor-default' : 'cursor-pointer hover:text-[#333333]'}`}
             >
-              {script.prompt || '暂无镜头描述'}
+              {script.prompt || 'No scene description yet'}
             </div>
           )}
         </div>
 
-        {/* 下半部分：口播文案编辑区 */}
+        {/* Bottom: voiceover script editor */}
         <div className="p-4">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-xs text-[#666666] font-medium">口播文案</span>
+            <span className="text-xs text-[#666666] font-medium">Voiceover script</span>
             <div className="flex items-center gap-2">
               {!editingScript && (
                 <>
@@ -1022,14 +1012,14 @@ function ScriptCard({
                     className={`text-xs ${disabled ? 'text-[#999999] cursor-default' : 'text-[#7A7A7A] hover:text-[#B999F3] transition-colors'}`}
                     disabled={disabled}
                   >
-                    编辑
+                    Edit
                   </button>
                   <button
                     onClick={onRegenerate}
                     className={`text-xs ${disabled ? 'text-[#999999] cursor-default' : 'text-[#B999F3] hover:text-[#D4C2F6] font-medium'}`}
                     disabled={disabled}
                   >
-                    重新生成
+                    Regenerate
                   </button>
                 </>
               )}
@@ -1043,26 +1033,26 @@ function ScriptCard({
                 onChange={(e) => setScriptValue(e.target.value)}
                 className="w-full p-2 text-sm font-medium border border-[#E5E5E5] rounded-md focus:border-[#D4C2F6] focus:ring-1 focus:ring-[#D4C2F6] resize-none"
                 rows={3}
-                placeholder="输入口播文案..."
+                placeholder="Write the voiceover script..."
               />
               <div className="flex justify-end gap-2">
                 <button
                   onClick={handleCancelScript}
                   className="px-2 py-1 text-xs text-[#666666] hover:bg-[#F1F3F5] rounded"
                 >
-                  取消
+                  Cancel
                 </button>
                 <button
                   onClick={handleSaveScript}
                   className="px-2 py-1 text-xs bg-[#B999F3] text-white hover:bg-[#D4C2F6] rounded"
                 >
-                  保存
+                  Save
                 </button>
               </div>
             </div>
           ) : (
             <p className="text-sm font-medium text-[#333333] leading-relaxed whitespace-pre-wrap">
-              {script.script || '暂无口播文案'}
+              {script.script || 'No voiceover script yet'}
             </p>
           )}
         </div>
@@ -1071,24 +1061,24 @@ function ScriptCard({
   );
 }
 
-// 主页面
+// Main page
 export default function ChatAgentPage() {
-  // 状态
-  const [sessions, setSessions] = useState<Session[]>([]); // 所有会话列表
-  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null); // 当前会话ID
+  // State
+  const [sessions, setSessions] = useState<Session[]>([]); // All sessions
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null); // Current session ID
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState('');
-  const [sessionId, setSessionId] = useState<string>(); // 后端会话ID
+  const [sessionId, setSessionId] = useState<string>(); // Backend session ID
   const [sessionState, setSessionState] = useState<SessionState>({});
   const [isLoading, setIsLoading] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
-  // 暂存的商品图片（未发送）
+  // Staged product images (not yet sent)
   const [pendingImages, setPendingImages] = useState<Array<{ id: string; imageUrl: string; thumbnail?: string }>>([]);
-  // isGenerating 改为从当前会话计算，不再使用全局状态
+  // isGenerating is derived from the current session instead of global state
   // const [isGenerating, setIsGenerating] = useState(false);
   const [userAvatar, setUserAvatar] = useState<string | null>(null);
   const [isAvatarUploading, setIsAvatarUploading] = useState(false);
-  // 配音语言：从当前会话获取（每个会话独立）
+  // Voiceover language comes from the current session
   const [generationProgress, setGenerationProgress] = useState<{
     currentStage: number;
     stageName: string;
@@ -1100,28 +1090,28 @@ export default function ChatAgentPage() {
     segmentStatus: {},
   });
 
-  // 后台任务管理器：存储每个会话的后台任务状态
+  // Background task manager keyed by session
   const backgroundTasksRef = useRef<Map<string, BackgroundTask>>(new Map());
 
-  // 存储最新的currentSessionId，用于事件处理时获取最新值（不受React状态更新周期影响）
+  // Latest currentSessionId for event handlers (independent of React render timing)
   const currentSessionIdRef = useRef<string | null>(null);
   useEffect(() => {
     currentSessionIdRef.current = currentSessionId;
   }, [currentSessionId]);
 
-  // 从当前会话获取isGenerating状态（每个会话独立）
+  // isGenerating is derived per session
   const currentSession = sessions.find(s => s.id === currentSessionId);
   const isGenerating = currentSession?.isGenerating || false;
-  const voiceLanguage = currentSession?.voiceLanguage || 'mandarin'; // 从当前会话获取配音语言
+  const voiceLanguage = currentSession?.voiceLanguage || 'english'; // Voiceover language of the current session
 
-  // 更新指定会话的配音语言
+  // Update the voiceover language of a session
   const updateSessionVoiceLanguage = useCallback((sessionId: string, lang: string) => {
     setSessions(prev => prev.map(s => 
       s.id === sessionId ? { ...s, voiceLanguage: lang } : s
     ));
   }, []);
 
-  // 更新指定会话的视频比例
+  // Update the video ratio of a session
   const updateSessionVideoRatio = useCallback((sessionId: string, ratio: '16:9' | '9:16') => {
     setSessions(prev => prev.map(s => 
       s.id === sessionId ? { ...s, videoRatio: ratio } : s
@@ -1131,27 +1121,27 @@ export default function ChatAgentPage() {
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const avatarFileInputRef = useRef<HTMLInputElement>(null);
-  const [isAtBottom, setIsAtBottom] = useState(true); // 是否滚动到底部
+  const [isAtBottom, setIsAtBottom] = useState(true); // Whether the list is scrolled to the bottom
 
-  // 初始化用户头像（从localStorage读取）
+  // Load the user avatar from localStorage
   useEffect(() => {
     const savedAvatar = localStorage.getItem(USER_AVATAR_STORAGE_KEY);
     if (savedAvatar) {
       setUserAvatar(savedAvatar);
     }
-    // 配音语言现在从会话中获取，不再使用localStorage存储全局设置
-    // 初始化会话列表（从localStorage读取）
+    // Voiceover language is stored per session, not as a global setting
+    // Load sessions from localStorage
     const savedSessions = localStorage.getItem(SESSIONS_STORAGE_KEY);
     if (savedSessions) {
       try {
         const parsed = JSON.parse(savedSessions) as Session[];
-        // 页面刷新后，后台任务已不存在，所有会话的isGenerating应该重置为false
+        // Background tasks do not survive a reload, so reset isGenerating everywhere
         const sessionsWithResetGenerating = parsed.map(s => ({
           ...s,
-          isGenerating: false, // 重置生成状态
+          isGenerating: false, // Reset generation state
         }));
         setSessions(sessionsWithResetGenerating);
-        // 如果有会话，选择第一个并加载其数据
+        // Select the first session and load its data
         if (sessionsWithResetGenerating.length > 0) {
           const firstSession = sessionsWithResetGenerating[0];
           setCurrentSessionId(firstSession.id);
@@ -1159,28 +1149,28 @@ export default function ChatAgentPage() {
           setSessionState(firstSession.state);
           setGenerationProgress(firstSession.progress);
           setSessionId(firstSession.backendSessionId);
-          // isGenerating 现在从 currentSession 计算，无需单独设置
+          // isGenerating is derived from currentSession
         }
       } catch (e) {
-        console.error('解析会话数据失败:', e);
-        // 创建默认会话
+        console.error('Failed to parse saved sessions:', e);
+        // Create a default session
         createDefaultSession();
       }
     } else {
-      // 没有保存的会话，创建默认会话
+      // No saved sessions: create a default one
       createDefaultSession();
     }
   }, []);
 
-  // 创建默认欢迎会话
+  // Create the default welcome session
   const createDefaultSession = useCallback(() => {
     const defaultSession: Session = {
       id: `session_${Date.now()}`,
-      title: '新对话',
+      title: 'New chat',
       messages: [{
         id: 'welcome',
         role: 'assistant',
-        content: '您好！我是「vidio」，您的专业带货视频智能助手。\n\n我可以帮您：\n1. 上传商品图片，自动识别商品和卖点\n2. 分段创作口播文案与画面提示词\n3. 生成带货视频片段\n4. 合成成片\n\n请上传您的商品图片或描述，开始创作吧！',
+        content: 'Hi! I am vidio, your product video assistant.\n\nI can help you:\n1. Upload product images and identify the product and selling points\n2. Write a scene-by-scene voiceover script with visual prompts\n3. Generate product video clips\n4. Compose the final video\n\nUpload a product image or describe your product to get started!',
         timestamp: new Date().toISOString(),
       }],
       state: {},
@@ -1203,50 +1193,50 @@ export default function ChatAgentPage() {
     });
   }, []);
 
-  // 初始化时如果没有会话，创建默认会话
+  // Create a default session when none exist
   useEffect(() => {
     if (sessions.length === 0 && !currentSessionId) {
       createDefaultSession();
     }
   }, [sessions.length, currentSessionId, createDefaultSession]);
 
-  // 保存会话列表到localStorage
+  // Persist sessions to localStorage
   useEffect(() => {
     if (sessions.length > 0) {
       localStorage.setItem(SESSIONS_STORAGE_KEY, JSON.stringify(sessions));
     }
   }, [sessions]);
 
-  // 组件卸载时清理后台任务
+  // Clean up background tasks on unmount
   useEffect(() => {
     return () => {
-      // 取消所有正在运行的后台任务
+      // Cancel every running background task
       backgroundTasksRef.current.forEach((task, sessionId) => {
         if (task.status === 'running') {
           task.abortController.abort();
           task.status = 'cancelled';
-          console.log(`已取消会话 ${sessionId} 的后台任务`);
+          console.log(`Cancelled background task for session ${sessionId}`);
         }
       });
       backgroundTasksRef.current.clear();
     };
   }, []);
 
-  // 页面可见性变化时保存会话数据（防止全屏退出后数据丢失）
+  // Save session data on visibility changes (prevents loss after leaving fullscreen)
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden' && sessions.length > 0) {
-        // 页面隐藏时（如进入全屏、切换标签页），保存会话数据
+        // Save when the page is hidden (fullscreen, tab switch)
         localStorage.setItem(SESSIONS_STORAGE_KEY, JSON.stringify(sessions));
-        console.log('[页面隐藏] 会话数据已保存');
+        console.log('[visibility] session data saved');
       }
     };
 
     const handlePageHide = () => {
-      // 页面卸载前保存数据
+      // Save before unload
       if (sessions.length > 0) {
         localStorage.setItem(SESSIONS_STORAGE_KEY, JSON.stringify(sessions));
-        console.log('[页面卸载] 会话数据已保存');
+        console.log('[unload] session data saved');
       }
     };
 
@@ -1259,9 +1249,9 @@ export default function ChatAgentPage() {
     };
   }, [sessions]);
 
-  // 新建会话（保存当前会话状态）
+  // Create a new session (saving the current one first)
   const handleNewSession = useCallback(() => {
-    // 保存当前会话状态
+    // Save the current session state
     if (currentSessionId) {
       setSessions(prev => prev.map(s => 
         s.id === currentSessionId 
@@ -1278,15 +1268,15 @@ export default function ChatAgentPage() {
       ));
     }
     
-    // 使用更唯一的ID生成方式（时间戳 + 随机数）
+    // Unique ID: timestamp + random suffix
     const newId = `session_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
     const newSession: Session = {
       id: newId,
-      title: '新对话',
+      title: 'New chat',
       messages: [{
         id: 'welcome',
         role: 'assistant',
-        content: '您好！我是「vidio」，您的专业带货视频智能助手。\n\n我可以帮您：\n1. 上传商品图片，自动识别商品和卖点\n2. 分段创作口播文案与画面提示词\n3. 生成带货视频片段\n4. 合成成片\n\n请上传您的商品图片或描述，开始创作吧！',
+        content: 'Hi! I am vidio, your product video assistant.\n\nI can help you:\n1. Upload product images and identify the product and selling points\n2. Write a scene-by-scene voiceover script with visual prompts\n3. Generate product video clips\n4. Compose the final video\n\nUpload a product image or describe your product to get started!',
         timestamp: new Date().toISOString(),
       }],
       state: {},
@@ -1297,8 +1287,8 @@ export default function ChatAgentPage() {
       },
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      voiceLanguage: 'mandarin', // 默认配音语言
-      videoRatio: '16:9', // 默认视频比例（横版）
+      voiceLanguage: 'english', // Default voiceover language
+      videoRatio: '16:9', // Default video ratio (landscape)
     };
     setSessions(prev => [newSession, ...prev]);
     setCurrentSessionId(newId);
@@ -1310,13 +1300,13 @@ export default function ChatAgentPage() {
       segmentStatus: {},
     });
     setSessionId(undefined);
-    // isGenerating 现在从 currentSession 计算，无需单独设置
+    // isGenerating is derived from currentSession
     setIsLoading(false);
   }, [currentSessionId, messages, sessionState, generationProgress, isGenerating, sessionId]);
 
-  // 切换会话（保存当前会话状态，不中断后台任务）
+  // Switch session (save the current one, keep background tasks running)
   const handleSelectSession = useCallback((id: string) => {
-    // 保存当前会话状态
+    // Save the current session state
     if (currentSessionId) {
       setSessions(prev => prev.map(s => 
         s.id === currentSessionId 
@@ -1333,7 +1323,7 @@ export default function ChatAgentPage() {
       ));
     }
     
-    // 加载新会话的状态
+    // Load the new session state
     const session = sessions.find(s => s.id === id);
     if (session) {
       setCurrentSessionId(id);
@@ -1341,13 +1331,13 @@ export default function ChatAgentPage() {
       setSessionState(session.state);
       setGenerationProgress(session.progress);
       setSessionId(session.backendSessionId);
-      // isGenerating 现在从 currentSession 计算，无需单独设置
+      // isGenerating is derived from currentSession
     }
   }, [currentSessionId, sessions, messages, sessionState, generationProgress, isGenerating, sessionId]);
 
-  // 删除会话（取消后台任务）
+  // Delete a session (cancelling its background task)
   const handleDeleteSession = useCallback((id: string) => {
-    // 取消该会话的后台任务
+    // Cancel the session's background task
     const task = backgroundTasksRef.current.get(id);
     if (task && task.status === 'running') {
       task.abortController.abort();
@@ -1357,7 +1347,7 @@ export default function ChatAgentPage() {
     
     setSessions(prev => {
       const newSessions = prev.filter(s => s.id !== id);
-      // 如果删除的是当前会话，切换到第一个或新建
+      // If the current session was deleted, switch to the first one or create a new one
       if (id === currentSessionId) {
         if (newSessions.length > 0) {
           const firstSession = newSessions[0];
@@ -1366,13 +1356,13 @@ export default function ChatAgentPage() {
           setSessionState(firstSession.state);
           setGenerationProgress(firstSession.progress);
           setSessionId(firstSession.backendSessionId);
-          // isGenerating 现在从 currentSession 计算，无需单独设置
+          // isGenerating is derived from currentSession
         } else {
-          // 没有会话了，新建一个
+          // No sessions left: create one
           handleNewSession();
         }
       }
-      // 更新localStorage
+      // Update localStorage
       if (newSessions.length > 0) {
         localStorage.setItem(SESSIONS_STORAGE_KEY, JSON.stringify(newSessions));
       } else {
@@ -1382,14 +1372,14 @@ export default function ChatAgentPage() {
     });
   }, [currentSessionId, handleNewSession]);
 
-  // 重命名会话
+  // Rename a session
   const handleRenameSession = useCallback((id: string, newTitle: string) => {
     setSessions(prev => prev.map(s => 
       s.id === id ? { ...s, title: newTitle, updatedAt: new Date().toISOString() } : s
     ));
   }, []);
 
-  // 更新当前会话数据
+  // Update the current session data
   const updateCurrentSession = useCallback((updates: Partial<Session>) => {
     if (currentSessionId) {
       setSessions(prev => prev.map(s => 
@@ -1400,26 +1390,26 @@ export default function ChatAgentPage() {
     }
   }, [currentSessionId]);
 
-  // 上传用户头像
+  // Upload a user avatar
   const handleAvatarUpload = async (file: File) => {
     setIsAvatarUploading(true);
     try {
-      // 创建canvas裁剪图片为圆形
+      // Crop the image to a circle on a canvas
       const img = await createImageFromFile(file);
       const canvas = document.createElement('canvas');
-      const size = 200; // 输出尺寸
+      const size = 200; // Output size
       canvas.width = size;
       canvas.height = size;
       
       const ctx = canvas.getContext('2d');
-      if (!ctx) throw new Error('无法创建canvas');
+      if (!ctx) throw new Error('Could not create a canvas');
 
-      // 计算裁剪区域（居中裁剪）
+      // Centre crop
       const minDim = Math.min(img.width, img.height);
       const sx = (img.width - minDim) / 2;
       const sy = (img.height - minDim) / 2;
       
-      // 绘制圆形裁剪
+      // Draw the circular crop
       ctx.beginPath();
       ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
       ctx.closePath();
@@ -1427,19 +1417,19 @@ export default function ChatAgentPage() {
       
       ctx.drawImage(img, sx, sy, minDim, minDim, 0, 0, size, size);
       
-      // 转为base64存储
+      // Store as base64
       const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
       localStorage.setItem(USER_AVATAR_STORAGE_KEY, dataUrl);
       setUserAvatar(dataUrl);
     } catch (error) {
-      console.error('头像上传失败:', error);
-      alert('头像上传失败，请重试');
+      console.error('Avatar upload failed:', error);
+      alert('Avatar upload failed, please try again');
     } finally {
       setIsAvatarUploading(false);
     }
   };
 
-  // 从File创建Image对象
+  // Create an Image from a File
   const createImageFromFile = (file: File): Promise<HTMLImageElement> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -1454,13 +1444,13 @@ export default function ChatAgentPage() {
     });
   };
 
-  // 恢复默认头像
+  // Restore the default avatar
   const handleAvatarReset = () => {
     localStorage.removeItem(USER_AVATAR_STORAGE_KEY);
     setUserAvatar(null);
   };
 
-  // 滚动到底部（平滑滚动）
+  // Smooth scroll to bottom
   const scrollToBottom = useCallback(() => {
     if (scrollAreaRef.current) {
       scrollAreaRef.current.scrollTo({
@@ -1470,49 +1460,49 @@ export default function ChatAgentPage() {
     }
   }, []);
 
-  // 监听滚动位置，判断是否到达底部
+  // Track scroll position to know when the list is at the bottom
   const handleScroll = useCallback(() => {
     if (scrollAreaRef.current) {
       const { scrollTop, scrollHeight, clientHeight } = scrollAreaRef.current;
-      const isBottom = scrollHeight - scrollTop - clientHeight < 10; // 10px容差
+      const isBottom = scrollHeight - scrollTop - clientHeight < 10; // 10px tolerance
       setIsAtBottom(isBottom);
     }
   }, []);
 
-  // 自动滚动（新消息时）
+  // Auto-scroll on new messages
   useEffect(() => {
     scrollToBottom();
     setIsAtBottom(true);
   }, [messages, scrollToBottom]);
 
-  // 发送消息（支持后台执行，支持多图片）
+  // Send a message (runs in the background, supports multiple images)
   const sendMessage = async (content: string, imageUrl?: string, auxiliaryImages?: string[]) => {
     if (!content.trim() && !imageUrl) return;
-    if (!currentSessionId) return; // 确保有当前会话ID
+    if (!currentSessionId) return; // Requires a current session
 
-    // 先取消该会话之前的running任务，防止重复请求
+    // Cancel the session's previous running task to avoid duplicate requests
     const existingTask = backgroundTasksRef.current.get(currentSessionId);
     if (existingTask && existingTask.status === 'running') {
-      console.log(`取消会话 ${currentSessionId} 的旧任务，开始新任务`);
+      console.log(`Cancelling the previous task for session ${currentSessionId}`);
       existingTask.abortController.abort();
       existingTask.status = 'cancelled';
     }
 
-    // 获取目标会话的完整状态（从sessions数组中获取，而非当前的sessionState）
+    // Read the target session's full state from the sessions array, not the live sessionState
     const targetSession = sessions.find(s => s.id === currentSessionId);
     if (!targetSession) return;
     
-    // 使用目标会话的后端sessionId和状态
+    // Use the target session's backend sessionId and state
     const targetBackendSessionId = targetSession.backendSessionId;
     const targetProductName = targetSession.state.productName;
     const targetSessionState = targetSession.state;
-    const targetVoiceLanguage = targetSession.voiceLanguage || 'mandarin'; // 使用目标会话的配音语言
-    const targetVideoRatio = targetSession.videoRatio || '16:9'; // 使用目标会话的视频比例
+    const targetVoiceLanguage = targetSession.voiceLanguage || 'english'; // Target session's voiceover language
+    const targetVideoRatio = targetSession.videoRatio || '16:9'; // Target session's video ratio
 
-    // 创建AbortController用于取消请求
+    // AbortController for cancelling the request
     const abortController = new AbortController();
     
-    // 存储后台任务状态
+    // Store the background task state
     const task: BackgroundTask = {
       sessionId: currentSessionId,
       abortController,
@@ -1521,25 +1511,25 @@ export default function ChatAgentPage() {
     };
     backgroundTasksRef.current.set(currentSessionId, task);
 
-    const sessionClientId = currentSessionId; // 保存当前会话ID，用于后台更新
+    const sessionClientId = currentSessionId; // Session that initiated the request
 
     const userMessage: ChatMessage = {
       id: `user_${Date.now()}`,
       role: 'user',
       content: imageUrl && auxiliaryImages?.length 
-        ? `[已上传${auxiliaryImages.length + 1}张商品图片]` 
-        : (imageUrl ? '[已上传商品图片]' : content),
+        ? `[Uploaded ${auxiliaryImages.length + 1} product images]`
+        : (imageUrl ? '[Uploaded a product image]' : content),
       timestamp: new Date().toISOString(),
       imageUrl: imageUrl,
       auxiliaryImages: auxiliaryImages,
     };
     
-    // 只有当前会话是发起请求的会话时，才更新显示的消息列表
+    // Only update the visible message list if this session is still active
     if (currentSessionId === sessionClientId) {
       setMessages(prev => [...prev, userMessage]);
     }
     
-    // 同时更新会话数据（用于后台持久化）
+    // Also update the session data for background persistence
     setSessions(prev => prev.map(s => 
       s.id === sessionClientId 
         ? { ...s, messages: [...s.messages, userMessage], updatedAt: new Date().toISOString() }
@@ -1549,9 +1539,9 @@ export default function ChatAgentPage() {
     setInputValue('');
     setIsLoading(true);
     
-    // 如果发送的是生成视频或合成视频指令，立即设置isGenerating为true（仅更新目标会话）
-    if (content === '生成分段视频' || content === '合成完整视频') {
-      // 只更新目标会话的isGenerating状态，不影响其他会话
+    // Generation or composition commands set isGenerating on the target session immediately
+    if (content === 'Generate video segments' || content === 'Compose the final video') {
+      // Only the target session changes; other sessions are untouched
       setSessions(prev => prev.map(s => 
         s.id === sessionClientId 
           ? { ...s, isGenerating: true, updatedAt: new Date().toISOString() }
@@ -1567,12 +1557,12 @@ export default function ChatAgentPage() {
       isStreaming: true,
     };
     
-    // 只有当前会话是发起请求的会话时，才更新显示的消息列表
+    // Only update the visible message list if this session is still active
     if (currentSessionId === sessionClientId) {
       setMessages(prev => [...prev, assistantMessage]);
     }
     
-    // 同时更新会话数据（用于后台持久化）
+    // Also update the session data for background persistence
     setSessions(prev => prev.map(s => 
       s.id === sessionClientId 
         ? { ...s, messages: [...s.messages, assistantMessage], updatedAt: new Date().toISOString() }
@@ -1580,28 +1570,28 @@ export default function ChatAgentPage() {
     ));
 
     try {
-      console.log(`[前端] 发送请求: sessionId=${targetBackendSessionId}, message=${content.substring(0, 50)}, scripts=${targetSessionState.scripts ? targetSessionState.scripts.length : '无'}`);
+      console.log(`[frontend] request: sessionId=${targetBackendSessionId}, message=${content.substring(0, 50)}, scripts=${targetSessionState.scripts ? targetSessionState.scripts.length : 'none'}`);
       const response = await fetch('/api/chat-agent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          sessionId: targetBackendSessionId, // 使用目标会话的后端sessionId
+          sessionId: targetBackendSessionId, // Target session's backend sessionId
           message: content,
-          imageUrl, // 主图片URL
-          auxiliaryImages, // 辅助图片URL列表
-          productName: targetProductName, // 使用目标会话的productName
-          voiceLanguage: targetVoiceLanguage, // 使用目标会话的配音语言
-          scripts: targetSessionState.scripts, // 发送scripts数据，避免会话状态丢失时无法生成视频
-          segments: targetSessionState.segments, // 发送segments数据
-          videoRatio: targetVideoRatio, // 发送视频比例参数（从会话对象获取）
+          imageUrl, // Main image URL
+          auxiliaryImages, // Additional image URLs
+          productName: targetProductName, // Target session's productName
+          voiceLanguage: targetVoiceLanguage, // Target session's voiceover language
+          scripts: targetSessionState.scripts, // Send scripts so video generation survives lost server state
+          segments: targetSessionState.segments, // Send segments
+          videoRatio: targetVideoRatio, // Video ratio from the session
         }),
-        signal: abortController.signal, // 添加AbortController signal
+        signal: abortController.signal, // AbortController signal
       });
 
-      if (!response.ok) throw new Error('请求失败');
+      if (!response.ok) throw new Error('Request failed');
 
       const reader = response.body?.getReader();
-      if (!reader) throw new Error('无法获取流');
+      if (!reader) throw new Error('Could not read the response stream');
 
       const decoder = new TextDecoder();
       let buffer = '';
@@ -1619,9 +1609,9 @@ export default function ChatAgentPage() {
             try {
               const eventData = JSON.parse(line.slice(6));
 
-              // 核心改动：根据sessionClientId更新对应会话的数据
-              // 如果是当前会话，同时更新当前状态
-              // 使用currentSessionIdRef.current获取最新的当前会话ID（不受React状态更新周期影响）
+              // Key change: update the session matching sessionClientId
+              // If it is the current session, update the live state too
+              // currentSessionIdRef.current always holds the latest session ID regardless of render timing
               const isCurrentSession = sessionClientId === currentSessionIdRef.current;
 
               switch (eventData.type) {
@@ -1632,7 +1622,7 @@ export default function ChatAgentPage() {
                       textContent.match(/^[{}\s":,]*$/)) {
                     break;
                   }
-                  // 更新会话数据
+                  // Update session data
                   setSessions(prev => prev.map(s => {
                     if (s.id !== sessionClientId) return s;
                     const updatedMessages = s.messages.map(m =>
@@ -1642,7 +1632,7 @@ export default function ChatAgentPage() {
                     );
                     return { ...s, messages: updatedMessages, updatedAt: new Date().toISOString() };
                   }));
-                  // 如果是当前会话，更新当前状态
+                  // Update live state if this is the current session
                   if (isCurrentSession) {
                     setMessages(prev =>
                       prev.map(m =>
@@ -1655,7 +1645,7 @@ export default function ChatAgentPage() {
                   break;
 
                 case 'progress':
-                  // 更新会话数据
+                  // Update session data
                   setSessions(prev => prev.map(s => {
                     if (s.id !== sessionClientId) return s;
                     const updatedMessages = s.messages.map(m =>
@@ -1677,26 +1667,26 @@ export default function ChatAgentPage() {
                   break;
 
                 case 'tool_result':
-                  // 兼容两种格式：
-                  // 1. 视频生成特殊处理：content包含完整对象，segments在content.data中
-                  // 2. 一般工具调用：data包含数据，或content.data包含数据
+                  // Two formats are supported:
+                  // 1. Video generation: content holds the full object and segments live in content.data
+                  // 2. Regular tool calls: data holds the payload, or content.data does
                   const trContentObj = eventData.content && typeof eventData.content === 'object' 
                     ? (eventData.content as Record<string, unknown>) 
                     : null;
                   const trDataObj = eventData.data as Record<string, unknown> | undefined;
                   
-                  // 从content.data或data中获取toolData
+                  // Read toolData from content.data or data
                   const trOuterData = trContentObj || trDataObj;
                   const trToolData = (trOuterData?.data || trOuterData) as Record<string, unknown> || {};
                   
-                  console.log('[前端] tool_result事件:', {
+                  console.log('[frontend] tool_result event:', {
                     hasContentObj: !!trContentObj,
                     hasDataObj: !!trDataObj,
                     toolDataSegments: trToolData.segments ? (trToolData.segments as Array<unknown>).length : 0,
                     toolDataStage: trToolData.currentStage
                   });
                   
-                  // 更新会话数据
+                  // Update session data
                   setSessions(prev => prev.map(s => {
                     if (s.id !== sessionClientId) return s;
                     const trMessageContent = typeof eventData.content === 'string' 
@@ -1711,9 +1701,9 @@ export default function ChatAgentPage() {
                           }
                         : m
                     );
-                    // 自动命名：如果productName首次出现且会话名称是默认的"新对话"，则自动更新为商品名称
+                    // Auto-title: when productName first appears and the title is still the default, use the product name
                     let newTitle = s.title;
-                    if (trToolData.productName && (s.title === '新对话' || s.title.startsWith('新对话'))) {
+                    if (trToolData.productName && (s.title === 'New chat' || s.title.startsWith('New chat'))) {
                       newTitle = trToolData.productName as string;
                     }
                     return { ...s, title: newTitle, messages: updatedMessages, state: { ...s.state, ...trToolData }, updatedAt: new Date().toISOString() };
@@ -1739,45 +1729,45 @@ export default function ChatAgentPage() {
 
                 case 'state_update':
                   const newBackendSessionId = eventData.sessionId;
-                  // 同时检查content和data字段，兼容不同格式
+                  // Check both content and data for compatibility
                   const stateData = eventData.data || eventData.content as Record<string, unknown> || {};
                   
-                  // 详细日志：检查segments数据
+                  // Verbose log: inspect segments
                   const newSegments = stateData.segments as Array<{id?: number; videoUrl?: string; script?: string}> | undefined;
-                  console.log('[前端] 收到state_update事件:', {
+                  console.log('[frontend] state_update event:', {
                     currentStage: stateData.currentStage,
                     segmentsCount: newSegments?.length || 0,
                     segmentsDetail: newSegments?.map(seg => ({id: seg.id, hasVideo: !!seg.videoUrl, videoUrl: seg.videoUrl?.substring(0, 30)}))
                   });
                   
-                  // 更新会话数据（保存后端会话ID）
+                  // Update session data (store the backend session ID)
                   setSessions(prev => prev.map(s => {
                     if (s.id !== sessionClientId) return s;
                     
-                    // 找到目标消息
+                    // Find the target message
                     const targetMsgIdx = s.messages.findIndex(m => m.id === assistantMessage.id);
                     if (targetMsgIdx === -1) return s;
                     const targetMsg = s.messages[targetMsgIdx];
                     
-                    // 合并segments：保留已有的videoUrl
+                    // Merge segments, keeping existing videoUrl values
                     const oldSegments = targetMsg.state?.segments || [];
                     let mergedSegments = newSegments || oldSegments;
                     
                     if (newSegments && newSegments.length > 0) {
-                      // 合并新旧segments，保留已有的videoUrl
+                      // Merge old and new segments, keeping existing videoUrl values
                       mergedSegments = newSegments.map(newSeg => {
                         const oldSeg = oldSegments.find(seg => seg.id === newSeg.id);
-                        // 如果新segment没有videoUrl但旧segment有，保留旧的videoUrl
+                        // Keep the old videoUrl when the new segment has none
                         if (!newSeg.videoUrl && oldSeg?.videoUrl) {
-                          console.log(`[前端] state_update合并: segment ${newSeg.id}保留旧videoUrl`);
+                          console.log(`[frontend] state_update merge: segment ${newSeg.id} keeps its videoUrl`);
                           return { ...newSeg, videoUrl: oldSeg.videoUrl, audioUrl: oldSeg.audioUrl, duration: oldSeg.duration };
                         }
                         return newSeg;
                       });
-                      console.log('[前端] state_update合并后segments:', mergedSegments.map(seg => ({id: seg.id, hasVideo: !!seg.videoUrl})));
+                      console.log('[frontend] state_update merged segments:', mergedSegments.map(seg => ({id: seg.id, hasVideo: !!seg.videoUrl})));
                     }
                     
-                    // 构建新的state，使用合并后的segments
+                    // Build the new state from the merged segments
                     const mergedStateData = { ...stateData, segments: mergedSegments };
                     
                     const updatedMessages = s.messages.map(m =>
@@ -1785,9 +1775,9 @@ export default function ChatAgentPage() {
                         ? { ...m, state: { ...m.state, ...mergedStateData } }
                         : m
                     );
-                    // 自动命名：如果productName首次出现且会话名称是默认的"新对话"，则自动更新为商品名称
+                    // Auto-title: when productName first appears and the title is still the default, use the product name
                     let newTitle = s.title;
-                    if (stateData.productName && (s.title === '新对话' || s.title.startsWith('新对话'))) {
+                    if (stateData.productName && (s.title === 'New chat' || s.title.startsWith('New chat'))) {
                       newTitle = stateData.productName;
                     }
                     return { 
@@ -1806,7 +1796,7 @@ export default function ChatAgentPage() {
                       if (targetMsgIdx === -1) return prev;
                       const targetMsg = prev[targetMsgIdx];
                       
-                      // 合并segments：保留已有的videoUrl
+                      // Merge segments, keeping existing videoUrl values
                       const oldSegments = targetMsg.state?.segments || [];
                       let mergedSegments = newSegments || oldSegments;
                       
@@ -1814,7 +1804,7 @@ export default function ChatAgentPage() {
                         mergedSegments = newSegments.map(newSeg => {
                           const oldSeg = oldSegments.find(seg => seg.id === newSeg.id);
                           if (!newSeg.videoUrl && oldSeg?.videoUrl) {
-                            console.log(`[前端] state_update合并: segment ${newSeg.id}保留旧videoUrl`);
+                            console.log(`[frontend] state_update merge: segment ${newSeg.id} keeps its videoUrl`);
                             return { ...newSeg, videoUrl: oldSeg.videoUrl, audioUrl: oldSeg.audioUrl, duration: oldSeg.duration };
                           }
                           return newSeg;
@@ -1828,7 +1818,7 @@ export default function ChatAgentPage() {
                           : m
                       );
                     });
-                    // 合并sessionState中的segments
+                    // Merge segments in sessionState
                     setSessionState(prev => {
                       const oldSegments = prev.segments || [];
                       let mergedSegments = newSegments || oldSegments;
@@ -1849,18 +1839,18 @@ export default function ChatAgentPage() {
                   break;
 
                 case 'wait_feedback':
-                  // 兼容两种格式：
-                  // 1. 视频生成特殊处理：content包含state
-                  // 2. 一般工具调用：data.state包含state
+                  // Two formats are supported:
+                  // 1. Video generation: content holds the state
+                  // 2. Regular tool calls: data.state holds the state
                   const wfContentObj = eventData.content && typeof eventData.content === 'object' 
                     ? (eventData.content as Record<string, unknown>) 
                     : null;
                   const wfDataObj = eventData.data as Record<string, unknown> | undefined;
                   
-                  // 从content.state或data.state中获取feedbackState
+                  // Read feedbackState from content.state or data.state
                   const feedbackState = (wfContentObj?.state || wfDataObj?.state) as Partial<SessionState> || {};
                   
-                  console.log('[前端] wait_feedback事件:', {
+                  console.log('[frontend] wait_feedback event:', {
                     hasContentObj: !!wfContentObj,
                     hasDataObj: !!wfDataObj,
                     feedbackStateSegments: feedbackState.segments?.length || 0,
@@ -1868,11 +1858,11 @@ export default function ChatAgentPage() {
                   });
                   
                   if (feedbackState.segments) {
-                    console.log('[前端] wait_feedback segments数量:', feedbackState.segments.length);
-                    console.log('[前端] wait_feedback segments详情:', feedbackState.segments.map(s => ({ id: s.id, hasVideo: !!s.videoUrl })));
+                    console.log('[frontend] wait_feedback segment count:', feedbackState.segments.length);
+                    console.log('[frontend] wait_feedback segments:', feedbackState.segments.map(s => ({ id: s.id, hasVideo: !!s.videoUrl })));
                   }
                   
-                  // 更新会话数据，需要合并segments保留videoUrl
+                  // Update session data, merging segments to keep videoUrl values
                   setSessions(prev => prev.map(s => {
                     if (s.id !== sessionClientId) return s;
                     const updatedMessages = s.messages.map(m => {
@@ -1880,11 +1870,11 @@ export default function ChatAgentPage() {
                       const oldState = m.state || {};
                       const oldSegments = oldState.segments || [];
                       const wfNewSegments = feedbackState.segments || [];
-                      // 合并segments，保留已有的videoUrl
+                      // Merge segments, keeping existing videoUrl values
                       const mergedSegments: SessionState['segments'] = wfNewSegments.map(newSeg => {
                         const oldSeg = oldSegments.find(seg => seg.id === newSeg.id);
                         if (!newSeg.videoUrl && oldSeg?.videoUrl) {
-                          console.log(`[前端] wait_feedback合并: segment ${newSeg.id} 保留旧videoUrl`);
+                          console.log(`[frontend] wait_feedback merge: segment ${newSeg.id} keeps its videoUrl`);
                           return { ...newSeg, videoUrl: oldSeg.videoUrl, audioUrl: oldSeg.audioUrl, duration: oldSeg.duration };
                         }
                         return newSeg;
@@ -1906,11 +1896,11 @@ export default function ChatAgentPage() {
                         const oldState = m.state || {};
                         const oldSegments = oldState.segments || [];
                         const wfSetMsgNewSegments = feedbackState.segments || [];
-                        // 合并segments，保留已有的videoUrl
+                        // Merge segments, keeping existing videoUrl values
                         const mergedSegments: SessionState['segments'] = wfSetMsgNewSegments.map(newSeg => {
                           const oldSeg = oldSegments.find(seg => seg.id === newSeg.id);
                           if (!newSeg.videoUrl && oldSeg?.videoUrl) {
-                            console.log(`[前端] wait_feedback setMessages合并: segment ${newSeg.id} 保留旧videoUrl`);
+                            console.log(`[frontend] wait_feedback setMessages merge: segment ${newSeg.id} keeps its videoUrl`);
                             return { ...newSeg, videoUrl: oldSeg.videoUrl, audioUrl: oldSeg.audioUrl, duration: oldSeg.duration };
                           }
                           return newSeg;
@@ -1921,11 +1911,11 @@ export default function ChatAgentPage() {
                     setSessionState(prev => {
                       const oldSegments = prev.segments || [];
                       const wfSetStateNewSegments = feedbackState.segments || [];
-                      // 合并segments，保留已有的videoUrl
+                      // Merge segments, keeping existing videoUrl values
                       const mergedSegments: SessionState['segments'] = wfSetStateNewSegments.map(newSeg => {
                         const oldSeg = oldSegments.find(seg => seg.id === newSeg.id);
                         if (!newSeg.videoUrl && oldSeg?.videoUrl) {
-                          console.log(`[前端] wait_feedback setSessionState合并: segment ${newSeg.id} 保留旧videoUrl`);
+                          console.log(`[frontend] wait_feedback setSessionState merge: segment ${newSeg.id} keeps its videoUrl`);
                           return { ...newSeg, videoUrl: oldSeg.videoUrl, audioUrl: oldSeg.audioUrl, duration: oldSeg.duration };
                         }
                         return newSeg;
@@ -1933,7 +1923,7 @@ export default function ChatAgentPage() {
                       return { ...prev, ...feedbackState, segments: mergedSegments };
                     });
                     setIsLoading(false);
-                    // 只更新目标会话的isGenerating状态为false
+                    // Only the target session's isGenerating becomes false
                     setSessions(prev => prev.map(s => 
                       s.id === sessionClientId 
                         ? { ...s, isGenerating: false, updatedAt: new Date().toISOString() }
@@ -1945,7 +1935,7 @@ export default function ChatAgentPage() {
                       stageName: '',
                     }));
                   }
-                  // 更新后台任务状态
+                  // Update background task state
                   if (backgroundTasksRef.current.has(sessionClientId)) {
                     const currentTask = backgroundTasksRef.current.get(sessionClientId);
                     if (currentTask) {
@@ -1954,10 +1944,10 @@ export default function ChatAgentPage() {
                   }
                   break;
 
-                // 视频生成进度事件
+                // Video generation progress event
                 case 'generation_progress':
                   const progressData = eventData.data || {};
-                  // 更新会话数据
+                  // Update session data
                   setSessions(prev => prev.map(s => {
                     if (s.id !== sessionClientId) return s;
                     const newProgress = {
@@ -1980,15 +1970,15 @@ export default function ChatAgentPage() {
                       estimatedTime: progressData.estimatedTime,
                       segmentStatus: progressData.segmentStatus || prev.segmentStatus,
                     }));
-                    // isGenerating 已在 setSessions 中更新，无需单独设置
+                    // isGenerating was already updated in setSessions
                   }
                   break;
 
-                // 镜头片段状态更新
+                // Scene segment status update
                 case 'segment_status':
                   const segId = eventData.segmentId;
                   const segStatus = eventData.status;
-                  // 更新会话数据
+                  // Update session data
                   setSessions(prev => prev.map(s => {
                     if (s.id !== sessionClientId) return s;
                     const newSegmentStatus = {
@@ -2012,22 +2002,22 @@ export default function ChatAgentPage() {
                   }
                   break;
 
-                // 镜头片段视频URL更新 - 视频生成完成后实时显示
+                // Scene segment video URL update: show each video as soon as it is ready
                 case 'segment_video':
                   const videoSegId = eventData.content?.segmentId;
                   const videoSegUrl = eventData.content?.videoUrl;
                   const videoSegAudioUrl = eventData.content?.audioUrl;
                   const videoSegDuration = eventData.content?.duration;
-                  console.log(`[前端] 收到segment_video事件: segmentId=${videoSegId}, videoUrl=${videoSegUrl?.substring(0, 50)}`);
+                  console.log(`[frontend] segment_video event: segmentId=${videoSegId}, videoUrl=${videoSegUrl?.substring(0, 50)}`);
                   
-                  // 确保videoSegId是number类型
+                  // Ensure videoSegId is a number
                   const videoSegIdNum = typeof videoSegId === 'number' ? videoSegId : parseInt(videoSegId as string, 10);
-                  console.log(`[前端] videoSegId转换: 原始=${videoSegId}(${typeof videoSegId}), 转换后=${videoSegIdNum}`);
+                  console.log(`[frontend] videoSegId coerced: raw=${videoSegId}(${typeof videoSegId}), number=${videoSegIdNum}`);
                   
-                  // 更新会话数据中的segments数组
+                  // Update the segments array in the session data
                   setSessions(prev => prev.map(s => {
                     if (s.id !== sessionClientId) return s;
-                    // 找到最后一条助手消息并更新其segments（从后往前查找）
+                    // Find the last assistant message (searching backwards) and update its segments
                     let lastAssistantIdx = -1;
                     for (let i = s.messages.length - 1; i >= 0; i--) {
                       if (s.messages[i].role === 'assistant') {
@@ -2036,21 +2026,21 @@ export default function ChatAgentPage() {
                       }
                     }
                     if (lastAssistantIdx === -1) {
-                      console.log(`[前端] segment_video: 未找到assistant消息`);
+                      console.log(`[frontend] segment_video: no assistant message found`);
                       return s;
                     }
                     const targetMsg = s.messages[lastAssistantIdx];
                     const existingSegments = targetMsg.state?.segments || [];
-                    console.log(`[前端] segment_video: existingSegments数量=${existingSegments.length}, ids=${existingSegments.map(seg => seg.id).join(',')}`);
+                    console.log(`[frontend] segment_video: existingSegments=${existingSegments.length}, ids=${existingSegments.map(seg => seg.id).join(',')}`);
                     
-                    // 检查是否有匹配的segment
+                    // Check for a matching segment
                     const matchedSegment = existingSegments.find(seg => seg.id === videoSegIdNum);
-                    console.log(`[前端] segment_video: 匹配结果=${matchedSegment ? `找到id=${matchedSegment.id}` : '未找到'}`);
+                    console.log(`[frontend] segment_video: match=${matchedSegment ? `id=${matchedSegment.id}` : 'none'}`);
                     
-                    // 更新对应segment的videoUrl
+                    // Update the matching segment's videoUrl
                     const updatedSegments = existingSegments.map(seg => {
                       if (seg.id === videoSegIdNum) {
-                        console.log(`[前端] segment_video: 更新segment ${seg.id}的videoUrl`);
+                        console.log(`[frontend] segment_video: updating videoUrl of segment ${seg.id}`);
                         return {
                           ...seg,
                           videoUrl: videoSegUrl,
@@ -2060,7 +2050,7 @@ export default function ChatAgentPage() {
                       }
                       return seg;
                     });
-                    // 如果该segment不存在，添加一个新的
+                    // Add the segment when it does not exist yet
                     if (!existingSegments.find(seg => seg.id === videoSegIdNum)) {
                       updatedSegments.push({
                         id: videoSegIdNum,
@@ -2068,7 +2058,7 @@ export default function ChatAgentPage() {
                         audioUrl: videoSegAudioUrl,
                         duration: videoSegDuration,
                         script: eventData.content?.script || '',
-                        prompt: '', // 视频生成时没有prompt，后续会由state_update补充
+                        prompt: '', // No prompt during video generation; state_update fills it in later
                       });
                     }
                     const updatedMessages = s.messages.map((m, idx) =>
@@ -2085,7 +2075,7 @@ export default function ChatAgentPage() {
                   }));
                   if (isCurrentSession) {
                     setMessages(prev => {
-                      // 从后往前找到最后一条assistant消息（与setSessions保持一致）
+                      // Find the last assistant message searching backwards (same as setSessions)
                       let lastAssistantIdx = -1;
                       for (let i = prev.length - 1; i >= 0; i--) {
                         if (prev[i].role === 'assistant') {
@@ -2096,10 +2086,10 @@ export default function ChatAgentPage() {
                       if (lastAssistantIdx === -1) return prev;
                       const targetMsg = prev[lastAssistantIdx];
                       const existingSegments = targetMsg.state?.segments || [];
-                      console.log(`[前端] segment_video setMessages: 索引=${lastAssistantIdx}, segments=${existingSegments.length}`);
+                      console.log(`[frontend] segment_video setMessages: index=${lastAssistantIdx}, segments=${existingSegments.length}`);
                       const updatedSegments = existingSegments.map(seg => {
                         if (seg.id === videoSegIdNum) {
-                          console.log(`[前端] 更新segment ${seg.id} videoUrl=${videoSegUrl ? '有' : '无'}`);
+                          console.log(`[frontend] segment ${seg.id} videoUrl=${videoSegUrl ? 'set' : 'missing'}`);
                           return { ...seg, videoUrl: videoSegUrl, audioUrl: videoSegAudioUrl, duration: videoSegDuration };
                         }
                         return seg;
@@ -2111,7 +2101,7 @@ export default function ChatAgentPage() {
                           audioUrl: videoSegAudioUrl,
                           duration: videoSegDuration,
                           script: eventData.content?.script || '',
-                          prompt: '', // 视频生成时没有prompt，后续会由state_update补充
+                          prompt: '', // No prompt during video generation; state_update fills it in later
                         });
                       }
                       return prev.map((m, idx) =>
@@ -2123,12 +2113,12 @@ export default function ChatAgentPage() {
                     setSessionState(prev => {
                       const existingSegments = prev.segments || [];
                       const updatedSegments = existingSegments.map(seg => {
-                        if (seg.id === videoSegIdNum) {  // 使用videoSegIdNum确保类型匹配
+                        if (seg.id === videoSegIdNum) {  // videoSegIdNum guarantees matching types
                           return { ...seg, videoUrl: videoSegUrl, audioUrl: videoSegAudioUrl, duration: videoSegDuration };
                         }
                         return seg;
                       });
-                      if (!existingSegments.find(seg => seg.id === videoSegIdNum)) {  // 使用videoSegIdNum
+                      if (!existingSegments.find(seg => seg.id === videoSegIdNum)) {  // videoSegIdNum
                         updatedSegments.push({
                           id: videoSegIdNum,
                           videoUrl: videoSegUrl,
@@ -2138,14 +2128,14 @@ export default function ChatAgentPage() {
                           prompt: '',
                         });
                       }
-                      console.log(`[前端] segment_video setSessionState: segments=${updatedSegments.length}, 有video=${updatedSegments.filter(s => s.videoUrl).length}`);
+                      console.log(`[frontend] segment_video setSessionState: segments=${updatedSegments.length}, withVideo=${updatedSegments.filter(s => s.videoUrl).length}`);
                       return { ...prev, segments: updatedSegments };
                     });
                   }
                   break;
 
                 case 'complete':
-                  // 更新会话数据
+                  // Update session data
                   setSessions(prev => prev.map(s => {
                     if (s.id !== sessionClientId) return s;
                     const updatedMessages = s.messages.map(m =>
@@ -2170,14 +2160,14 @@ export default function ChatAgentPage() {
                       )
                     );
                     setIsLoading(false);
-                    // isGenerating 已在 setSessions 中更新为false，无需单独设置
+                    // isGenerating was already set to false in setSessions
                     setGenerationProgress(prev => ({
                       ...prev,
                       currentStage: 0,
                       stageName: '',
                     }));
                   }
-                  // 更新后台任务状态
+                  // Update background task state
                   if (backgroundTasksRef.current.has(sessionClientId)) {
                     const currentTask = backgroundTasksRef.current.get(sessionClientId);
                     if (currentTask) {
@@ -2187,14 +2177,14 @@ export default function ChatAgentPage() {
                   break;
 
                 case 'error':
-                  // 更新会话数据
+                  // Update session data
                   setSessions(prev => prev.map(s => {
                     if (s.id !== sessionClientId) return s;
                     const updatedMessages = s.messages.map(m =>
                       m.id === assistantMessage.id
                         ? {
                             ...m,
-                            content: `错误: ${eventData.content}`,
+                            content: `Error: ${eventData.content}`,
                             isStreaming: false,
                           }
                         : m
@@ -2212,7 +2202,7 @@ export default function ChatAgentPage() {
                         m.id === assistantMessage.id
                           ? {
                               ...m,
-                              content: `错误: ${eventData.content}`,
+                              content: `Error: ${eventData.content}`,
                               isStreaming: false,
                             }
                           : m
@@ -2220,7 +2210,7 @@ export default function ChatAgentPage() {
                     );
                     setIsLoading(false);
                   }
-                  // 更新后台任务状态
+                  // Update background task state
                   if (backgroundTasksRef.current.has(sessionClientId)) {
                     const currentTask = backgroundTasksRef.current.get(sessionClientId);
                     if (currentTask) {
@@ -2230,28 +2220,28 @@ export default function ChatAgentPage() {
                   break;
               }
             } catch {
-              // 解析失败，忽略
+              // Ignore parse failures
             }
           }
         }
       }
     } catch (error) {
-      // 如果是主动取消，不显示错误
+      // Do not show an error for deliberate cancellation
       if (error instanceof Error && error.name === 'AbortError') {
-        console.log('请求已取消');
+        console.log('Request cancelled');
         return;
       }
       
-      console.error('发送消息失败:', error);
+      console.error('Failed to send message:', error);
       
-      // 更新会话数据
+      // Update session data
       setSessions(prev => prev.map(s => {
         if (s.id !== sessionClientId) return s;
         const updatedMessages = s.messages.map(m =>
           m.id === assistantMessage.id
             ? {
                 ...m,
-                content: `抱歉，处理时出现错误：${error instanceof Error ? error.message : '未知错误'}`,
+                content: `Sorry, something went wrong: ${error instanceof Error ? error.message : 'Unknown error'}`,
                 isStreaming: false,
               }
             : m
@@ -2264,14 +2254,14 @@ export default function ChatAgentPage() {
         };
       }));
       
-      // 使用ref获取最新的当前会话ID（不受React状态更新周期影响）
+      // Use the ref for the latest current session ID
       if (sessionClientId === currentSessionIdRef.current) {
         setMessages(prev =>
           prev.map(m =>
             m.id === assistantMessage.id
               ? {
                   ...m,
-                  content: `抱歉，处理时出现错误：${error instanceof Error ? error.message : '未知错误'}`,
+                  content: `Sorry, something went wrong: ${error instanceof Error ? error.message : 'Unknown error'}`,
                   isStreaming: false,
                 }
               : m
@@ -2280,7 +2270,7 @@ export default function ChatAgentPage() {
         setIsLoading(false);
       }
       
-      // 更新后台任务状态
+      // Update background task state
       if (backgroundTasksRef.current.has(sessionClientId)) {
         const currentTask = backgroundTasksRef.current.get(sessionClientId);
         if (currentTask) {
@@ -2290,20 +2280,20 @@ export default function ChatAgentPage() {
     }
   };
 
-  // 上传图片到暂存区（不自动发送，支持多选）
+  // Upload images to the staging area (no auto-send, multi-select)
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) {
-      console.log('没有选择文件');
+      console.log('No files selected');
       return;
     }
 
-    console.log(`开始上传 ${files.length} 张图片`);
+    console.log(`Uploading ${files.length} images`);
     setIsLoading(true);
 
-    // 并行上传所有文件
+    // Upload all files in parallel
     const uploadPromises = Array.from(files).map(async (file) => {
-      console.log('上传图片:', file.name, file.type, file.size);
+      console.log('Uploading image:', file.name, file.type, file.size);
       const formData = new FormData();
       formData.append('file', file);
 
@@ -2315,14 +2305,14 @@ export default function ChatAgentPage() {
 
         if (!response.ok) {
           const errorData = await response.json();
-          console.error('上传失败:', errorData);
+          console.error('Upload failed:', errorData);
           return null;
         }
 
         const data = await response.json();
-        console.log('上传成功，imageUrl:', data.imageUrl);
+        console.log('Upload succeeded, imageUrl:', data.imageUrl);
         
-        // 生成缩略图
+        // Create a thumbnail
         const thumbnail = await createThumbnail(file);
         
         return {
@@ -2331,7 +2321,7 @@ export default function ChatAgentPage() {
           thumbnail
         };
       } catch (error) {
-        console.error('上传图片失败:', file.name, error);
+        console.error('Image upload failed:', file.name, error);
         return null;
       }
     });
@@ -2342,23 +2332,23 @@ export default function ChatAgentPage() {
       
       if (successfulImages.length > 0) {
         setPendingImages(prev => [...prev, ...successfulImages]);
-        console.log(`成功添加 ${successfulImages.length} 张图片到暂存区`);
+        console.log(`Added ${successfulImages.length} images to the staging area`);
       }
       
       if (successfulImages.length < files.length) {
-        console.warn(`${files.length - successfulImages.length} 张图片上传失败`);
+        console.warn(`${files.length - successfulImages.length} images failed to upload`);
       }
     } catch (error) {
-      console.error('批量上传出错:', error);
+      console.error('Batch upload error:', error);
     }
     
     setIsLoading(false);
     
-    // 清空input，允许再次选择同一文件
+    // Reset the input so the same file can be selected again
     e.target.value = '';
   };
 
-  // 创建图片缩略图
+  // Create an image thumbnail
   const createThumbnail = (file: File): Promise<string> => {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -2369,29 +2359,29 @@ export default function ChatAgentPage() {
     });
   };
 
-  // 删除暂存图片
+  // Remove a staged image
   const removePendingImage = (id: string) => {
     setPendingImages(prev => prev.filter(img => img.id !== id));
   };
 
-  // 发送暂存图片进行识别（支持多图片：主图片 + 辅助图片）
+  // Send staged images for recognition (main image + additional images)
   const sendPendingImages = () => {
     if (pendingImages.length === 0) return;
     
-    // 第一张图片作为主图片，其他图片作为辅助图片
+    // The first image is the main image; the rest are supporting images
     const mainImage = pendingImages[0];
     const auxiliaryImageUrls = pendingImages.length > 1 
       ? pendingImages.slice(1).map(img => img.imageUrl) 
       : undefined;
     
-    // 发送多图片进行商品识别
-    sendMessage('请帮我分析这些商品图片，识别商品信息并提取卖点。第一张图片是主图片，其他图片是辅助图片，请综合分析所有图片信息。', mainImage.imageUrl, auxiliaryImageUrls);
+    // Send all images for product recognition
+    sendMessage('Please analyse these product images, identify the product and extract its selling points. The first image is the main image; the others are supporting images. Consider all of them together.', mainImage.imageUrl, auxiliaryImageUrls);
     
-    // 清空暂存区
+    // Clear the staging area
     setPendingImages([]);
   };
 
-  // 清除会话
+  // Clear the session
   const clearSession = async () => {
     if (sessionId) {
       await fetch(`/api/chat-agent?sessionId=${sessionId}`, { method: 'DELETE' });
@@ -2402,17 +2392,17 @@ export default function ChatAgentPage() {
       {
         id: 'welcome_new',
         role: 'assistant',
-        content: '会话已清除。请上传新的商品图片，开始新的创作！',
+        content: 'Session cleared. Upload a new product image to start a new project!',
         timestamp: new Date().toISOString(),
       },
     ]);
   };
 
-  // 渲染助手消息内容
+  // Render assistant message content
   const renderAssistantContent = (message: ChatMessage) => {
     const msgState = message.state || {};
 
-    // 最终视频
+    // Final video
     if (msgState.finalVideoUrl || msgState.localVideoPath) {
       const videoSrc = msgState.localVideoPath || getAccessibleUrl(msgState.finalVideoUrl || '');
       const videoRatio = (msgState.videoRatio === '9:16' ? '9:16' : '16:9') as '16:9' | '9:16';
@@ -2436,17 +2426,17 @@ export default function ChatAgentPage() {
                     document.body.removeChild(link);
                     window.URL.revokeObjectURL(blobUrl);
                   } catch (error) {
-                    console.error('下载失败:', error);
+                    console.error('Download failed:', error);
                     window.open(videoSrc, '_blank');
                   }
                 }}
                 className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2 bg-[#B999F3] text-white rounded-lg text-sm hover:bg-[#D4C2F6] transition-colors"
               >
                 <Download className="w-4 h-4" />
-                下载视频
+                Download video
               </button>
               <Button variant="outline" size="sm" onClick={clearSession}>
-                开始新创作
+                Start a new project
               </Button>
             </div>
           </div>
@@ -2454,40 +2444,40 @@ export default function ChatAgentPage() {
       );
     }
 
-    // 文案内容（包含视频片段预览）
+    // Script content (with segment previews)
     if (msgState.scripts && msgState.scripts.length > 0 || msgState.segments && msgState.segments.length > 0) {
-      // 判断是否有视频片段（至少有一个segment有有效的videoUrl）
+      // Whether any segment has a valid videoUrl
       const hasVideoSegments = msgState.segments && 
         msgState.segments.length > 0 && 
         msgState.segments.some(seg => seg.videoUrl && seg.videoUrl.length > 0);
-      // 判断是否正在生成视频
+      // Whether video generation is in progress
       const isVideoGenerating = msgState.currentStage === 'video_generating';
-      // 判断是否已完成
+      // Whether everything is done
       const isDone = msgState.currentStage === 'done';
       
-      // 测试日志：输出hasVideoSegments和segments状态
-      console.log('[渲染测试] hasVideoSegments =', hasVideoSegments);
-      console.log('[渲染测试] segments数量 =', msgState.segments?.length);
-      console.log('[渲染测试] segments详情 =', msgState.segments?.map(s => ({ id: s.id, hasVideo: !!s.videoUrl, videoUrlLength: s.videoUrl?.length || 0 })));
-      console.log('[渲染测试] currentStage =', msgState.currentStage);
+      // Debug log: hasVideoSegments and segments
+      console.log('[render] hasVideoSegments =', hasVideoSegments);
+      console.log('[render] segment count =', msgState.segments?.length);
+      console.log('[render] segments =', msgState.segments?.map(s => ({ id: s.id, hasVideo: !!s.videoUrl, videoUrlLength: s.videoUrl?.length || 0 })));
+      console.log('[render] currentStage =', msgState.currentStage);
       
-      // 如果正在生成视频，显示进度提示而不是文案
+      // While generating, show progress instead of the script
       if (isVideoGenerating && !hasVideoSegments) {
         return (
           <div className="space-y-3">
             <p className="text-sm">{filterSystemCommands(message.content)}</p>
             
-            {/* 商品信息卡片 */}
+            {/* Product card */}
             {msgState.productName && (
               <Card className="bg-white shadow-sm max-w-[600px]">
                 <CardContent className="p-3">
                   <div className="flex items-center gap-2 mb-2">
-                    <Badge variant="secondary" className="bg-[#ECE6F7] text-[#333333]">商品</Badge>
+                    <Badge variant="secondary" className="bg-[#ECE6F7] text-[#333333]">Product</Badge>
                     <span className="font-medium text-sm">{msgState.productName}</span>
                   </div>
                   {msgState.features && msgState.features.length > 0 && (
                     <div className="text-xs text-[#666666]">
-                      <span className="font-medium">核心卖点：</span>
+                      <span className="font-medium">Key selling points:</span>
                       {msgState.features.join('、')}
                     </div>
                   )}
@@ -2495,20 +2485,20 @@ export default function ChatAgentPage() {
               </Card>
             )}
             
-            {/* 视频生成进度提示 */}
+            {/* Video generation progress */}
             <div className="flex items-center gap-2 text-sm text-[#666666]">
               <Loader2 className="h-4 w-4 animate-spin text-[#B999F3]" />
-              <span>正在生成分段视频，预计{msgState.segments?.length || 4}个片段，请稍候...</span>
+              <span>Generating {msgState.segments?.length || 4} video segments, please wait...</span>
             </div>
             
-            {/* 已生成的视频片段预览（实时更新） */}
+            {/* Completed segment previews (live) */}
             {msgState.segments && msgState.segments.length > 0 && (
               <div className="grid grid-cols-2 gap-4 mt-4">
                 {msgState.segments
                   .filter(seg => seg.videoUrl && seg.videoUrl.length > 0)
                   .map(segment => {
                     const segVideoRatio = (msgState.videoRatio === '9:16' ? '9:16' : '16:9') as '16:9' | '9:16';
-                    // 竖版视频：保持9:16比例，宽度180px（高度约320px）
+                    // Portrait: keep 9:16, 180px wide (about 320px tall)
                     const segAspectClass = segVideoRatio === '9:16' ? 'aspect-[9/16] w-[180px]' : 'aspect-video';
                     return (
                     <div key={segment.id} className="bg-white rounded-xl shadow-md overflow-hidden">
@@ -2526,22 +2516,22 @@ export default function ChatAgentPage() {
         );
       }
       
-      // 正常渲染：有视频片段或文案时
+      // Normal render: script and/or video segments
       return (
         <div className="space-y-3">
           <p className="text-sm">{filterSystemCommands(message.content)}</p>
           
-          {/* 商品信息卡片 */}
+          {/* Product card */}
           {msgState.productName && (
             <Card className="bg-white shadow-sm max-w-[600px]">
               <CardContent className="p-3">
                 <div className="flex items-center gap-2 mb-2">
-                  <Badge variant="secondary" className="bg-[#ECE6F7] text-[#333333]">商品</Badge>
+                  <Badge variant="secondary" className="bg-[#ECE6F7] text-[#333333]">Product</Badge>
                   <span className="font-medium text-sm">{msgState.productName}</span>
                 </div>
                 {msgState.features && msgState.features.length > 0 && (
                   <div className="text-xs text-[#666666]">
-                    <span className="font-medium">核心卖点：</span>
+                    <span className="font-medium">Key selling points:</span>
                     {msgState.features.join('、')}
                   </div>
                 )}
@@ -2549,7 +2539,7 @@ export default function ChatAgentPage() {
             </Card>
           )}
           
-          {/* 全流程进度条 */}
+          {/* Full workflow progress */}
           <ProgressTracker
             currentStage={generationProgress.currentStage}
             stageName={generationProgress.stageName}
@@ -2557,11 +2547,11 @@ export default function ChatAgentPage() {
             isGenerating={isGenerating}
           />
           
-          {/* 视频片段网格 - 当有视频片段时显示 */}
+          {/* Segment grid, shown when segments exist */}
           {hasVideoSegments && (
             <div className="space-y-2 mb-4">
               <div className="text-xs text-[#666666] p-2 bg-[#ECE6F7] rounded-lg">
-                🎬 分段视频已生成，点击下方按钮合成完整视频
+                🎬 Video segments are ready. Use the button below to compose the final video
               </div>
               <div className="grid gap-4" style={{
                 gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
@@ -2570,11 +2560,11 @@ export default function ChatAgentPage() {
                   .sort((a, b) => (a.id || 0) - (b.id || 0))
                   .map((segment, index) => {
                     const segVideoRatio = (msgState.videoRatio === '9:16' ? '9:16' : '16:9') as '16:9' | '9:16';
-                    // 竖版视频：保持9:16比例，宽度180px（高度约320px）
+                    // Portrait: keep 9:16, 180px wide (about 320px tall)
                     const segAspectClass = segVideoRatio === '9:16' ? 'aspect-[9/16] w-[180px]' : 'aspect-video';
                     return (
                     <div key={`segment-${segment.id || index}-${segment.videoUrl || segment.localVideoPath || 'no-video'}`} className="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-lg transition-shadow">
-                      {/* 视频预览区 - 根据比例适配 */}
+                      {/* Video preview, sized by ratio */}
                       <div className={`relative ${segAspectClass} bg-gray-900 group`}>
                         <VideoPlayer
                           videoUrl={segment.videoUrl}
@@ -2585,9 +2575,9 @@ export default function ChatAgentPage() {
                           size="segment"
                         />
                       </div>
-                      {/* 文案与操作区 */}
+                      {/* Script and actions */}
                       <div className="p-3 bg-[#F1F3F5]">
-                        <Badge variant="outline" className="mb-2 text-xs border-[#D4C2F6] text-[#B999F3]">片段 {segment.id}</Badge>
+                        <Badge variant="outline" className="mb-2 text-xs border-[#D4C2F6] text-[#B999F3]">Segment {segment.id}</Badge>
                         <p className="text-sm text-[#333333] mt-1 line-clamp-2 leading-relaxed">{segment.script}</p>
                       </div>
                     </div>
@@ -2596,25 +2586,25 @@ export default function ChatAgentPage() {
             </div>
           )}
           
-          {/* 镜头序列卡片 - 只有文案但没有视频片段时显示 */}
+          {/* Scene cards, shown when there is a script but no video yet */}
           {!hasVideoSegments && msgState.scripts && msgState.scripts.length > 0 && (
             <>
-              {/* 镜头序列引导语 */}
+              {/* Scene sequence intro */}
               <div className="text-xs text-[#666666] mb-3 p-2 bg-[#ECE6F7] rounded-lg">
-                📹 以下是为你生成的连续镜头，可直接修改镜头描述和口播文案，调整顺序或单独重制某一镜头，再生成完整视频
+                📹 Here is your scene sequence. Edit the scene descriptions and voiceover, reorder scenes or redo a single scene, then generate the full video
               </div>
               
-              {/* 镜头序列卡片 - 左侧流程线 + 纵向排列 */}
+              {/* Scene cards: left timeline, stacked vertically */}
               <div className="relative pl-8 py-2">
-                {/* 左侧垂直流程线 */}
+                {/* Vertical timeline */}
                 <div className="absolute left-3 top-2 bottom-2 w-0.5 bg-[#D4C2F6]" />
-                {/* 流程节点 */}
+                {/* Timeline nodes */}
                 {msgState.scripts.map((script, index) => (
                   <div key={script.id} className="relative mb-6 last:mb-2">
-                    {/* 左侧节点圆点 */}
+                    {/* Node dot */}
                     <div className="absolute -left-5 top-4 w-3 h-3 rounded-full bg-[#B999F3] border-2 border-white shadow" />
                     
-                    {/* 镜头卡片 */}
+                    {/* Scene card */}
                     <ScriptCard
                       script={script}
                       index={index}
@@ -2622,7 +2612,7 @@ export default function ChatAgentPage() {
                       segmentStatus={generationProgress.segmentStatus[script.id] || 'pending'}
                       isGenerating={isGenerating}
                       onEdit={(field: 'script' | 'prompt', value: string) => {
-                        // 更新文案内容
+                        // Update the script text
                         const updatedScripts = msgState.scripts?.map(s => 
                           s.id === script.id ? { ...s, [field]: value } : s
                         ) || [];
@@ -2631,7 +2621,7 @@ export default function ChatAgentPage() {
                           scripts: updatedScripts
                         }));
                       }}
-                      onRegenerate={() => sendMessage(`重新生成镜头${script.id}`)}
+                      onRegenerate={() => sendMessage(`Regenerate scene ${script.id}`)}
                       onMoveUp={index > 0 ? () => {
                         const newScripts = [...(msgState.scripts || [])];
                         [newScripts[index - 1], newScripts[index]] = [newScripts[index], newScripts[index - 1]];
@@ -2649,42 +2639,42 @@ export default function ChatAgentPage() {
             </>
           )}
           
-          {/* 底部统一操作按钮 */}
+          {/* Shared action buttons */}
           {!isDone && (
             <div className="mt-4 p-3 bg-white rounded-lg shadow-sm border border-[#E5E5E5]">
-              {/* 视频比例已在会话页夹中选定，此处不再重复选择 */}
+              {/* The video ratio is chosen on the session card, so it is not repeated here */}
               <div className="flex items-center justify-between">
                 <span className="text-sm text-[#666666]">
-                  {isGenerating ? '正在生成中，请稍候...' : 
+                  {isGenerating ? 'Generating, please wait...' :
                     hasVideoSegments 
-                      ? '分段视频已生成，点击合成完整视频' 
-                      : '确认所有镜头内容后，点击生成分段视频'}
+                      ? 'Video segments are ready; compose the final video'
+                      : 'Review every scene, then generate the video segments'}
                 </span>
                 <Button
                   size="sm"
                   className="bg-[#B999F3] hover:bg-[#D4C2F6] text-white disabled:bg-gray-300 disabled:text-gray-500"
                   onClick={() => sendMessage(
                     hasVideoSegments 
-                      ? '[COMPOSE_VIDEO] 请将所有分段视频合成为完整视频，添加背景音乐和字幕。' 
-                      : '[GENERATE_SEGMENTS] 请根据文案生成分段视频，每个分段包含配音和画面。'
+                      ? '[COMPOSE_VIDEO] Compose all video segments into the final video with background music and subtitles.'
+                      : '[GENERATE_SEGMENTS] Generate the video segments from the script, each with voiceover and visuals.'
                   )}
                   disabled={
                     isGenerating || 
-                    // "生成分段视频"按钮：只在script_generated阶段可用
+                    // "Generate video segments" is only available in the script_generated stage
                     (!hasVideoSegments && msgState.currentStage !== 'script_generated') ||
-                    // "合成完整视频"按钮：只在video_generated阶段可用
+                    // "Compose the final video" is only available in the video_generated stage
                     (hasVideoSegments && msgState.currentStage !== 'video_generated')
                   }
                 >
                   {isGenerating ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin mr-1" />
-                      生成中...
+                      Generating...
                     </>
                   ) : (
                     hasVideoSegments 
-                      ? '🎬 合成完整视频' 
-                      : '🎥 生成分段视频'
+                      ? '🎬 Compose the final video'
+                      : '🎥 Generate video segments'
                   )}
                 </Button>
               </div>
@@ -2694,7 +2684,7 @@ export default function ChatAgentPage() {
       );
     }
 
-    // 商品识别结果
+    // Product recognition result
     if (msgState.productName && !msgState.scripts) {
       return (
         <div className="space-y-3">
@@ -2702,12 +2692,12 @@ export default function ChatAgentPage() {
           <Card className="bg-white shadow-sm max-w-[600px]">
             <CardContent className="p-3">
               <div className="flex items-center gap-2 mb-2">
-                <Badge variant="secondary" className="bg-[#ECE6F7] text-[#B999F3]">商品</Badge>
+                <Badge variant="secondary" className="bg-[#ECE6F7] text-[#B999F3]">Product</Badge>
                 <span className="font-medium text-sm">{msgState.productName}</span>
               </div>
               {msgState.features && msgState.features.length > 0 && (
                 <div className="text-xs text-[#666666]">
-                  <span className="font-medium">核心卖点：</span>
+                  <span className="font-medium">Key selling points:</span>
                   {msgState.features.join('、')}
                 </div>
               )}
@@ -2716,24 +2706,24 @@ export default function ChatAgentPage() {
           <Button
             size="sm"
             className="bg-[#B999F3] hover:bg-[#D4C2F6] text-white disabled:bg-gray-300 disabled:text-gray-500"
-            onClick={() => sendMessage('请根据商品信息生成带货文案')}
+            onClick={() => sendMessage('Write the promotional script from the product information')}
             disabled={isLoading || isGenerating || (msgState.currentStage && ['script_generated', 'video_generated', 'composing', 'done'].includes(msgState.currentStage))}
           >
-            生成文案
+            Write the script
           </Button>
         </div>
       );
     }
 
-    // 默认文本
+    // Default text
     return <p className="text-sm whitespace-pre-wrap">{filterSystemCommands(message.content)}</p>;
   };
 
-  // 渲染单条消息
-  // 判断是否是纯文本消息（无结构化数据）
+  // Render a single message
+  // Whether the message is plain text (no structured data)
   const isPlainTextMessage = (message: ChatMessage) => {
     const msgState = message.state || {};
-    // 如果有商品信息、文案、视频片段、最终视频等结构化数据，则不是纯文本
+    // Product info, scripts, segments or a final video make it structured
     return !msgState.productName && 
            !msgState.scripts?.length && 
            !msgState.segments?.length && 
@@ -2741,36 +2731,36 @@ export default function ChatAgentPage() {
            !msgState.localVideoPath;
   };
 
-  // 渲染单条消息
+  // Render a single message
   const renderMessage = (message: ChatMessage) => {
     const isPlainText = isPlainTextMessage(message);
     
     if (message.role === 'user') {
-      // 用户消息：头像在右侧
+      // User message: avatar on the right
       return (
         <div key={message.id} className="flex justify-end items-start gap-2 mb-3">
-          {/* 消息气泡 */}
+          {/* Message bubble */}
           <div className="max-w-[72%] bg-[#B999F3] text-white rounded-2xl rounded-tr-md px-4 py-2.5 shadow-sm">
-            {/* 多图片显示：主图片 + 辅助图片 */}
+            {/* Multiple images: main image + supporting images */}
             {(message.imageUrl || message.auxiliaryImages?.length) && (
               <div className="flex gap-2 mb-2 flex-wrap">
-                {/* 主图片 */}
+                {/* Main image */}
                 {message.imageUrl && (
                   <div className="relative">
                     <img 
                       src={message.imageUrl} 
-                      alt="主图片" 
+                      alt="Main image"
                       className="w-24 h-24 rounded-lg object-cover border-2 border-white/80"
                     />
-                    <span className="absolute top-1 right-1 bg-[#B999F3] text-white text-[10px] px-1 rounded shadow-sm">主</span>
+                    <span className="absolute top-1 right-1 bg-[#B999F3] text-white text-[10px] px-1 rounded shadow-sm">Main</span>
                   </div>
                 )}
-                {/* 辅助图片 */}
+                {/* Supporting images */}
                 {message.auxiliaryImages?.map((auxUrl, idx) => (
                   <div key={idx} className="relative">
                     <img 
                       src={auxUrl} 
-                      alt={`辅助图片${idx + 1}`} 
+                      alt={`Supporting image ${idx + 1}`}
                       className="w-24 h-24 rounded-lg object-cover border border-white/50"
                     />
                     <span className="absolute top-1 right-1 bg-[#666666]/70 text-white text-[10px] px-1 rounded shadow-sm">{idx + 1}</span>
@@ -2783,13 +2773,13 @@ export default function ChatAgentPage() {
               <ClientTime timestamp={message.timestamp} />
             </p>
           </div>
-          {/* 用户头像 - 仅纯文本消息显示 */}
+          {/* User avatar, plain-text messages only */}
           {isPlainText && (
             <div className="w-8 h-8 rounded-full overflow-hidden bg-gray-300 flex items-center justify-center shadow-sm shrink-0 ring-2 ring-white/50">
               {userAvatar ? (
                 <img 
                   src={userAvatar} 
-                  alt="用户头像" 
+                  alt="User avatar"
                   className="w-full h-full object-cover"
                 />
               ) : (
@@ -2801,10 +2791,10 @@ export default function ChatAgentPage() {
       );
     }
 
-    // Agent消息：头像在左侧
+    // Agent message: avatar on the left
     return (
       <div key={message.id} className="flex justify-start items-start gap-2 mb-3">
-        {/* Agent头像 - 仅纯文本消息显示 */}
+        {/* Agent avatar, plain-text messages only */}
         {isPlainText && (
           <NextImage
             src="/assets/agent-avatar.png" 
@@ -2814,20 +2804,20 @@ export default function ChatAgentPage() {
             className="w-8 h-8 rounded-full object-cover shadow-sm shrink-0 ring-2 ring-white/50"
           />
         )}
-        {/* 消息气泡 */}
+        {/* Message bubble */}
         <div className="max-w-[72%] bg-[#F1F3F5] text-[#333333] rounded-2xl rounded-tl-md px-4 py-2.5 shadow-sm">
-          {/* Agent名称标签 - 仅纯文本消息显示 */}
+          {/* Agent name label, plain-text messages only */}
           {isPlainText && (
             <div className="flex items-center gap-1.5 mb-1.5">
               <span className="text-xs font-medium text-[#B999F3]">vidio</span>
             </div>
           )}
           
-          {/* 内容 */}
+          {/* Content */}
           {message.isStreaming && !message.content ? (
             <div className="flex items-center gap-2">
               <Loader2 className="w-4 h-4 animate-spin text-[#B999F3]" />
-              <span className="text-sm text-[#666666]">正在思考...</span>
+              <span className="text-sm text-[#666666]">Thinking...</span>
             </div>
           ) : (
             renderAssistantContent(message)
@@ -2843,11 +2833,11 @@ export default function ChatAgentPage() {
 
   return (
     <>
-      {/* 全屏背景 */}
+      {/* Full-screen background */}
       <div className="fixed inset-0 bg-[#F8F7F5]" />
       <a href="/studio" className="fixed top-3 right-4 z-50 rounded-full bg-[#7543cf] px-4 py-2 text-xs font-medium text-white shadow-sm hover:bg-[#6332b8]">Open the safe studio demo →</a>
       
-      {/* 左右分栏布局 */}
+      {/* Two-column layout */}
       <div 
         className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-2xl shadow-lg overflow-hidden flex"
         style={{
@@ -2860,7 +2850,7 @@ export default function ChatAgentPage() {
           transition: 'height 0.3s ease',
         }}
       >
-        {/* 左侧会话侧边栏 - 260px宽 */}
+        {/* Left session sidebar, 260px */}
         {!isCollapsed && (
           <SessionSidebar
             sessions={sessions}
@@ -2874,11 +2864,11 @@ export default function ChatAgentPage() {
           />
         )}
         
-        {/* 右侧聊天窗口 */}
+        {/* Right chat window */}
         <div className="flex-1 flex flex-col" style={{ width: isCollapsed ? '100%' : 'calc(100% - 260px)' }}>
-          {/* 顶部导航栏 - 固定56px */}
+          {/* Top bar, fixed 56px */}
           <div className="h-[56px] bg-gradient-to-r from-[#F5E6D3] to-[#FFFFFF] flex items-center justify-between px-4 shrink-0 border-b border-[#E5E5E5]">
-            {/* 折叠时显示 vidio logo */}
+            {/* Show the vidio logo when collapsed */}
             {isCollapsed && (
               <div className="flex items-center gap-3">
                 <NextImage
@@ -2890,16 +2880,16 @@ export default function ChatAgentPage() {
                 />
                 <div className="flex flex-col">
                   <span className="text-[#333333] font-semibold text-lg">vidio</span>
-                  <span className="text-[#666666] text-sm">带货视频智能助手</span>
+                  <span className="text-[#666666] text-sm">Product video assistant</span>
                 </div>
               </div>
             )}
-            {/* 非折叠时左侧留空 */}
+            {/* Left side stays empty when expanded */}
             {!isCollapsed && <div />}
             
-            {/* 用户头像 + 折叠按钮 */}
+            {/* User avatar + collapse button */}
             <div className="flex items-center gap-3">
-              {/* 用户头像 */}
+              {/* User avatar */}
               <UserAvatar
                 avatarUrl={userAvatar}
                 onUpload={handleAvatarUpload}
@@ -2907,11 +2897,11 @@ export default function ChatAgentPage() {
                 isUploading={isAvatarUploading}
               />
               
-              {/* 折叠按钮 */}
+              {/* Collapse button */}
               <button
                 onClick={() => setIsCollapsed(!isCollapsed)}
                 className="p-2 hover:bg-[#F1F3F5] rounded-lg transition-colors"
-                title={isCollapsed ? '展开' : '折叠'}
+                title={isCollapsed ? 'Expand' : 'Collapse'}
               >
                 {isCollapsed ? (
                   <ChevronUp className="w-5 h-5 text-[#7A7A7A]" />
@@ -2922,7 +2912,7 @@ export default function ChatAgentPage() {
             </div>
           </div>
           
-          {/* 中间聊天区 - 弹性高度 */}
+          {/* Chat area, flexible height */}
           {!isCollapsed && (
             <div 
               ref={scrollAreaRef}
@@ -2932,7 +2922,7 @@ export default function ChatAgentPage() {
             >
               {messages.map(renderMessage)}
               
-              {/* 加载指示器 */}
+              {/* Loading indicator */}
               {isLoading && messages[messages.length - 1]?.isStreaming && messages[messages.length - 1]?.content && (
                 <div className="flex justify-start mb-3">
                   <div className="bg-[#F1F3F5] rounded-2xl px-4 py-2 shadow-sm">
@@ -2943,15 +2933,15 @@ export default function ChatAgentPage() {
             </div>
           )}
           
-          {/* 商品图片暂存区 */}
+          {/* Product image staging area */}
           {!isCollapsed && pendingImages.length > 0 && (
             <div className="px-4 py-3 bg-[#F8F7F5] border-t border-[#E5E5E5]">
               <div className="flex items-center gap-2 mb-2">
                 <ImageIcon className="w-4 h-4 text-[#7A7A7A]" />
-                <span className="text-sm text-[#666666]">商品图片</span>
-                <span className="text-xs text-[#999999]">({pendingImages.length}张)</span>
+                <span className="text-sm text-[#666666]">Product images</span>
+                <span className="text-xs text-[#999999]">({pendingImages.length})</span>
                 {pendingImages.length > 1 && (
-                  <span className="text-xs text-[#B999F3]">· 第一张为主图</span>
+                  <span className="text-xs text-[#B999F3]">· the first image is the main image</span>
                 )}
               </div>
               <div className="flex gap-2 items-center flex-wrap">
@@ -2960,7 +2950,7 @@ export default function ChatAgentPage() {
                     key={img.id} 
                     className="relative group cursor-pointer"
                     onClick={() => {
-                      // 点击设置为主图（移动到第一位）
+                      // Click to make this the main image (move it first)
                       if (index > 0) {
                         const newImages = [...pendingImages];
                         const clickedImg = newImages.splice(index, 1)[0];
@@ -2968,26 +2958,26 @@ export default function ChatAgentPage() {
                         setPendingImages(newImages);
                       }
                     }}
-                    title={index === 0 ? '主图（重点参考）' : `辅图${index}（点击设为主图）`}
+                    title={index === 0 ? 'Main image (primary reference)' : `Supporting image ${index} (click to make main)`}
                   >
                     <img 
                       src={img.thumbnail || img.imageUrl} 
-                      alt={index === 0 ? '主图' : `辅图${index}`} 
+                      alt={index === 0 ? 'Main image' : `Supporting image ${index}`}
                       className={`w-16 h-16 rounded-lg object-cover ${
                         index === 0 
                           ? 'border-2 border-[#B999F3] ring-2 ring-[#D4C2F6]/30' 
                           : 'border border-[#E5E5E5]'
                       }`}
                     />
-                    {/* 主图/辅图标识 - 右上角小角标 */}
+                    {/* Main/supporting badge, top-right corner */}
                     <div className={`absolute top-0.5 right-0.5 px-1 rounded text-[10px] font-medium shadow-sm ${
                       index === 0 
                         ? 'bg-[#B999F3] text-white' 
                         : 'bg-[#666666]/70 text-white'
                     }`}>
-                      {index === 0 ? '主' : `${index}`}
+                      {index === 0 ? 'Main' : `${index}`}
                     </div>
-                    {/* 删除按钮 */}
+                    {/* Remove button */}
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -3005,7 +2995,7 @@ export default function ChatAgentPage() {
                   onClick={sendPendingImages}
                   disabled={isLoading}
                 >
-                  开始识别
+                  Identify product
                 </Button>
                 <Button
                   size="sm"
@@ -3013,23 +3003,23 @@ export default function ChatAgentPage() {
                   className="h-8 px-3 text-xs text-[#666666] border-[#E5E5E5]"
                   onClick={() => setPendingImages([])}
                 >
-                  清空
+                  Clear
                 </Button>
               </div>
             </div>
           )}
           
-          {/* 底部输入栏 - 固定70px */}
+          {/* Bottom input bar, fixed 70px */}
           {!isCollapsed && (
             <div className="h-[70px] bg-white border-t border-[#E5E5E5] flex items-center justify-center px-4 gap-3 shrink-0 relative">
-              {/* 滚动到底部按钮 - 输入框正上方 */}
+              {/* Scroll-to-bottom button above the input */}
               {!isAtBottom && (
                 <div className="absolute -top-12 left-1/2 -translate-x-1/2 z-20">
                   <ScrollToBottomButton onClick={scrollToBottom} isAtBottom={isAtBottom} />
                 </div>
               )}
               
-              {/* 上传按钮 */}
+              {/* Upload button */}
               <label className="cursor-pointer">
                 <input
                   type="file"
@@ -3043,12 +3033,12 @@ export default function ChatAgentPage() {
                 </div>
               </label>
               
-              {/* 输入框 */}
+              {/* Input */}
               <Input
                 ref={inputRef}
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
-                placeholder="输入消息或上传商品图片..."
+                placeholder="Type a message or upload product images..."
                 className="flex-1 max-w-[500px] h-[40px] rounded-full border-[#E5E5E5] focus:border-[#D4C2F6] focus:ring-[#D4C2F6]"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
@@ -3059,7 +3049,7 @@ export default function ChatAgentPage() {
                 disabled={isLoading}
               />
               
-              {/* 发送按钮 */}
+              {/* Send button */}
               <Button
                 size="icon"
                 className="w-[40px] h-[40px] rounded-full shrink-0 bg-[#B999F3] hover:bg-[#D4C2F6] text-white"

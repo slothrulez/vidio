@@ -7,7 +7,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * 代理访问本地文件
+ * Serve a local file
  * GET /api/file?path=/tmp/xxx/video/xxx.mp4
  */
 export async function GET(request: NextRequest) {
@@ -15,24 +15,24 @@ export async function GET(request: NextRequest) {
     const filePath = request.nextUrl.searchParams.get('path');
     
     if (!filePath) {
-      return NextResponse.json({ error: '缺少文件路径参数' }, { status: 400 });
+      return NextResponse.json({ error: 'Missing file path parameter' }, { status: 400 });
     }
     
-    // 安全检查：只允许访问 /tmp 目录下的文件
+    // Security: only files under /tmp
     const normalizedPath = path.normalize(filePath);
     if (!normalizedPath.startsWith('/tmp/')) {
-      return NextResponse.json({ error: '无权访问该路径' }, { status: 403 });
+      return NextResponse.json({ error: 'Access to this path is not allowed' }, { status: 403 });
     }
     
-    // 检查文件是否存在
+    // Existence check
     if (!fs.existsSync(normalizedPath)) {
-      return NextResponse.json({ error: '文件不存在' }, { status: 404 });
+      return NextResponse.json({ error: 'File not found' }, { status: 404 });
     }
     
-    // 读取文件
+    // Read the file
     const fileBuffer = fs.readFileSync(normalizedPath);
     
-    // 根据文件扩展名确定 Content-Type
+    // Content-Type from the extension
     const ext = path.extname(normalizedPath).toLowerCase();
     const contentTypes: Record<string, string> = {
       '.mp4': 'video/mp4',
@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('文件访问错误:', safeLogError(error));
-    return NextResponse.json({ error: '文件访问失败' }, { status: 500 });
+    console.error('File access error:', safeLogError(error));
+    return NextResponse.json({ error: 'File access failed' }, { status: 500 });
   }
 }

@@ -8,10 +8,10 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * 创建商品文件夹
+ * Create the product folder
  * POST /api/video-task/init
  * Body: { productName: string }
- * 返回: { folderPath: string, folderName: string }
+ * Returns: { folderPath: string, folderName: string }
  */
 export async function POST(request: NextRequest) {
   try {
@@ -19,31 +19,31 @@ export async function POST(request: NextRequest) {
     const { productName } = body;
 
     if (!productName || productName.trim() === '') {
-      return new Response(JSON.stringify({ error: '请先填写商品名称' }), {
+      return new Response(JSON.stringify({ error: 'Enter a product name first' }), {
         status: 400,
         headers: { 'Content-Type': 'application/json' },
       });
     }
 
-    // 清理商品名称，移除特殊字符
+    // Strip special characters from the product name
     const sanitizedName = productName.replace(/[^\u4e00-\u9fa5a-zA-Z0-9_-]/g, '_');
     
-    // 根据环境选择目录
-    // 优先使用环境变量判断，如果没有设置则检测 public 目录是否存在
+    // Pick the directory by environment
+    // Prefer the environment variable; otherwise check whether public/ exists
     const publicDir = path.join(process.cwd(), 'public');
     const isProduction = process.env.COZE_PROJECT_ENV === 'PROD' || !fs.existsSync(publicDir);
     const baseDir = isProduction 
-      ? '/tmp'  // 生产环境使用 /tmp
+      ? '/tmp'  // production uses /tmp
       : publicDir;
     
-    console.log(`环境判断: COZE_PROJECT_ENV=${process.env.COZE_PROJECT_ENV}, publicDir存在=${fs.existsSync(publicDir)}, 使用目录: [path]`);
+    console.log(`environment: COZE_PROJECT_ENV=${process.env.COZE_PROJECT_ENV}, publicDirExists=${fs.existsSync(publicDir)}, dir: [path]`);
     
-    // 确保基础目录存在
+    // Ensure the base directory exists
     if (!fs.existsSync(baseDir)) {
       fs.mkdirSync(baseDir, { recursive: true });
     }
     
-    // 查找可用的文件夹名称
+    // Find a free folder name
     let folderName = sanitizedName;
     let folderPath = path.join(baseDir, folderName);
     let suffix = 0;
@@ -54,16 +54,16 @@ export async function POST(request: NextRequest) {
       folderPath = path.join(baseDir, folderName);
     }
     
-    // 创建文件夹
+    // Create the folder
     fs.mkdirSync(folderPath, { recursive: true });
     
-    // 创建子文件夹
+    // Create subfolders
     const audioDir = path.join(folderPath, 'audio');
     const videoDir = path.join(folderPath, 'video');
     fs.mkdirSync(audioDir, { recursive: true });
     fs.mkdirSync(videoDir, { recursive: true });
     
-    console.log(`创建商品文件夹: [path]`);
+    console.log(`created product folder: [path]`);
 
     return new Response(JSON.stringify({
       folderPath,
@@ -76,9 +76,9 @@ export async function POST(request: NextRequest) {
       headers: { 'Content-Type': 'application/json' },
     });
   } catch (error) {
-    console.error('创建文件夹失败:', safeLogError(error));
+    console.error('Folder creation failed:', safeLogError(error));
     return new Response(JSON.stringify({ 
-      error: error instanceof Error ? error.message : '创建文件夹失败' 
+      error: error instanceof Error ? error.message : 'Folder creation failed'
     }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' },

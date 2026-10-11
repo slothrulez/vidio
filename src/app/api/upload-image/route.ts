@@ -8,14 +8,14 @@ export async function POST(request: NextRequest) {
     const file = formData.get('file') as File;
 
     if (!file) {
-      return NextResponse.json({ error: '未找到上传文件' }, { status: 400 });
+      return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
     }
 
-    // 将 File 转换为 Buffer
+    // File to Buffer
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // 初始化存储客户端
+    // Storage client
     const storage = new S3Storage({
       endpointUrl: process.env.COZE_BUCKET_ENDPOINT_URL,
       accessKey: '',
@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
       region: 'cn-beijing',
     });
 
-    // 上传文件
+    // Upload
     const fileName = `product-images/${Date.now()}_${file.name}`;
     const fileKey = await storage.uploadFile({
       fileContent: buffer,
@@ -32,10 +32,10 @@ export async function POST(request: NextRequest) {
       contentType: file.type || 'image/jpeg',
     });
 
-    // 生成可访问的 URL
+    // Signed URL
     const imageUrl = await storage.generatePresignedUrl({
       key: fileKey,
-      expireTime: 86400 * 7, // 7 天有效期
+      expireTime: 86400 * 7, // valid for 7 days
     });
 
     return NextResponse.json({
@@ -44,9 +44,9 @@ export async function POST(request: NextRequest) {
       fileKey,
     });
   } catch (error) {
-    console.error('图片上传失败:', safeLogError(error));
+    console.error('Image upload failed:', safeLogError(error));
     return NextResponse.json(
-      { error: '图片上传失败，请重试' },
+      { error: 'Image upload failed, please retry' },
       { status: 500 }
     );
   }

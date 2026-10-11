@@ -354,10 +354,8 @@ input contracts remain unchanged; `retry_job` resumes an eligible failed job wit
 submitting a second paid provider task. The MCP Apps studio creates **English-only**
 scripts, voiceover requests and captions; choose 16:9 or 9:16 on project creation.
 Demo audio remains an explicitly labelled sample tone, not English speech.
-Existing website/API language values and historical projects are preserved;
-non-English projects cannot be generated or retried through MCP and are not
-listed in the new studio. Create a new English project instead of silently
-translating or overwriting previous scripts. Script approval is separate from saving and from
+Projects are English-only; migration `0007_english_only.sql` normalises any older rows.
+Script approval is separate from saving and from
 the final paid-action confirmation. Confirmations use accessible in-flow Radix
 panels beside their action, not full-iframe centered overlays that can appear
 offscreen in an auto-height host. Job and scene progress are recovered from
@@ -391,11 +389,11 @@ credentials.
 `confirmed: true` remains client-declared outside the widget and must not be
 described as proof of consent. No live paid test was run here.
 
-- [Next.js 官方文档](https://nextjs.org/docs)
-- [shadcn/ui 组件文档](https://ui.shadcn.com)
-- [Tailwind CSS 文档](https://tailwindcss.com/docs)
-- [LangGraph 文档](https://langchain-ai.github.io/langgraph/)
-- [火山引擎 API 文档](https://www.volcengine.com/docs)
+- [Next.js documentation](https://nextjs.org/docs)
+- [shadcn/ui documentation](https://ui.shadcn.com)
+- [Tailwind CSS documentation](https://tailwindcss.com/docs)
+- [LangGraph documentation](https://langchain-ai.github.io/langgraph/)
+- [Volcengine API documentation](https://www.volcengine.com/docs)
 
 ## Notes
 

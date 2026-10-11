@@ -22,14 +22,14 @@ function sendEvent(controller: ReadableStreamDefaultController, data: StreamData
   controller.enqueue(encoder.encode(message));
 }
 
-// 下载文件到本地
+// Download a file
 function downloadFile(url: string, localPath: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const protocol = url.startsWith('https') ? https : http;
     const file = fs.createWriteStream(localPath);
     
     protocol.get(url, (response) => {
-      // 处理重定向
+      // Follow redirects
       if (response.statusCode === 301 || response.statusCode === 302) {
         const redirectUrl = response.headers.location;
         if (redirectUrl) {
@@ -50,19 +50,19 @@ function downloadFile(url: string, localPath: string): Promise<void> {
   });
 }
 
-// 使用 FFmpeg 获取音频时长
+// Read the audio duration with FFmpeg
 function getAudioDurationFFmpeg(audioPath: string): number {
   try {
     const cmd = `ffprobe -v quiet -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${audioPath}"`;
     const output = execSync(cmd, { encoding: 'utf-8' }).trim();
     return parseFloat(output);
   } catch {
-    return 4; // 默认4秒
+    return 4; // default 4s
   }
 }
 
 /**
- * 生成单段音频和视频
+ * Generate one segment's audio and video
  * POST /api/video-task/generate-segment
  */
 export async function POST(request: NextRequest) {
@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
   const stream = new ReadableStream({
     async start(controller) {
       try {
-        // 支持 JSON 和 FormData 两种格式
+        // Accepts JSON and FormData
         const contentType = request.headers.get('content-type') || '';
         let segmentId: number, script: string, prompt: string, imageUrl: string, folderPath: string, productName: string;
         
@@ -94,21 +94,21 @@ export async function POST(request: NextRequest) {
         }
 
         if (!segmentId || !script || !prompt || !folderPath) {
-          sendEvent(controller, { type: 'error', content: '缺少必要参数' });
+          sendEvent(controller, { type: 'error', content: 'Missing required parameters' });
           controller.close();
           return;
         }
 
-        // 获取火山方舟配置
+        // Provider configuration
         const arkApiKey = process.env.ARK_API_KEY;
         const arkBaseUrl = process.env.ARK_BASE_URL || 'https://ark.cn-beijing.volces.com';
         const videoModelEP = process.env.VIDEO_MODEL_EP || 'ep-20260514120705-pqv86';
         
-        // TTS 客户端使用默认配置
+        // The TTS client uses the defaults
         const defaultConfig = new Config({ timeout: 300000 });
         const ttsClient = new TTSClient(defaultConfig, customHeaders);
         
-        // 视频生成客户端使用火山方舟配置
+        // The video client uses the provider configuration
         const videoGenConfig = arkApiKey ? new Config({ 
           apiKey: arkApiKey,
           baseUrl: arkBaseUrl,
@@ -118,7 +118,7 @@ export async function POST(request: NextRequest) {
         
         const storage = new S3Storage();
 
-        // 文件路径
+        // File paths
         const audioDir = path.join(folderPath, 'audio');
         const videoDir = path.join(folderPath, 'video');
         const audioFileName = `audio_${segmentId}_${Date.now()}.mp3`;
@@ -126,28 +126,28 @@ export async function POST(request: NextRequest) {
         const audioPath = path.join(audioDir, audioFileName);
         const videoPath = path.join(videoDir, videoFileName);
 
-        // Step 1: 生成 TTS 音频
+        // Step 1: generate TTS audio
         sendEvent(controller, { 
           type: 'tts_start', 
-          content: `正在生成第 ${segmentId} 段配音...`,
+          content: `Generating voiceover for segment ${segmentId}...`,
           segmentId 
         });
 
         const ttsResult = await ttsClient.synthesize({
           uid: `segment_${segmentId}`,
           text: script,
-          speaker: 'zh_female_mizai_saturn_bigtts',
+          speaker: 'zh_female_vv_uranus_bigtts',
           audioFormat: 'mp3',
         });
 
         if (!ttsResult.audioUri) {
-          throw new Error('TTS生成失败');
+          throw new Error('TTS generation failed');
         }
 
-        // 下载音频到本地
+        // Download the audio
         await downloadFile(ttsResult.audioUri, audioPath);
         
-        // 获取音频时长
+        // Read the audio duration
         const audioDuration = getAudioDurationFFmpeg(audioPath);
         
         sendEvent(controller, {
@@ -161,22 +161,22 @@ export async function POST(request: NextRequest) {
           segmentId,
         });
 
-        // Step 2: 生成视频
+        // Step 2: generate the video
         sendEvent(controller, {
           type: 'video_start',
-          content: `正在生成第 ${segmentId} 段视频...`,
+          content: `Generating video for segment ${segmentId}...`,
           segmentId,
         });
 
         const videoDuration = Math.max(5, audioDuration);
         
-        // 构建 content 参数，使用正确的格式（与成功接口一致）
+        // Build the content parameter in the format the API expects
         const content: Array<
           | { type: 'text'; text: string }
           | { type: 'image_url'; image_url: { url: string }; role?: 'first_frame' | 'last_frame' }
         > = [];
         
-        // 先将图片上传到对象存储，确保URL可访问
+        // Upload the image to object storage first so the URL is reachable
         let accessibleImageUrl = imageUrl;
         if (imageUrl) {
           try {
@@ -189,9 +189,9 @@ export async function POST(request: NextRequest) {
               key: imageKey,
               expireTime: 3600,
             });
-            console.log('图片上传成功:', redactUrl(accessibleImageUrl));
+            console.log('Image uploaded:', redactUrl(accessibleImageUrl));
           } catch (uploadError) {
-            console.error('图片上传失败，使用原始URL:', safeLogError(uploadError));
+            console.error('Image upload failed, using the original URL:', safeLogError(uploadError));
           }
         }
 
@@ -208,7 +208,7 @@ export async function POST(request: NextRequest) {
           text: prompt,
         });
 
-        console.log('视频生成参数:', JSON.stringify({ content, options: {
+        console.log('video generation parameters:', JSON.stringify({ content, options: {
           model: videoModelEP,
           duration: videoDuration,
           ratio: '16:9',
@@ -227,10 +227,10 @@ export async function POST(request: NextRequest) {
         });
 
         if (!videoResponse.videoUrl) {
-          throw new Error('视频生成失败');
+          throw new Error('Video generation failed');
         }
 
-        // 下载视频到本地
+        // Download the video
         await downloadFile(videoResponse.videoUrl, videoPath);
 
         sendEvent(controller, {
@@ -263,19 +263,19 @@ export async function POST(request: NextRequest) {
 
         controller.close();
       } catch (error) {
-        console.error('生成失败:', safeLogError(error));
+        console.error('Generation failed:', safeLogError(error));
         if (error instanceof Error) {
-          console.error('错误详情:', safeLogError(error));
+          console.error('Error details:', safeLogError(error));
         }
-        // 尝试从错误中提取更多信息
+        // Extract more detail from the error
         const errorObj = error as { response?: { data?: unknown; status?: number } };
         if (errorObj.response) {
-          console.error('响应数据:', safeLogError(errorObj.response.data));
-          console.error('响应状态:', errorObj.response.status);
+          console.error('Response data:', safeLogError(errorObj.response.data));
+          console.error('Response status:', errorObj.response.status);
         }
         sendEvent(controller, {
           type: 'error',
-          content: error instanceof Error ? error.message : '生成失败',
+          content: error instanceof Error ? error.message : 'Generation failed',
         });
         controller.close();
       }

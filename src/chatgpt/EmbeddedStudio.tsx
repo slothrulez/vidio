@@ -153,10 +153,6 @@ export function EmbeddedStudio({
 
   const apply = useCallback((result: ToolResponse) => {
     const next = result.structuredContent.project;
-    if (next && next.language !== "english") {
-      setError("This saved project uses a different language. Create a new English project; the original is unchanged.");
-      return;
-    }
     if (next) {
       if (projectRef.current?.id===next.id && next.revision<projectRef.current.revision) return;
       if (projectRef.current?.id!==next.id || projectRef.current.revision!==next.revision) setAction(undefined);
@@ -175,7 +171,7 @@ export function EmbeddedStudio({
       );
     }
     if (result.structuredContent.projects)
-      setProjects(result.structuredContent.projects.filter((item) => item.language === "english"));
+      setProjects(result.structuredContent.projects);
     const nextJob = result.structuredContent.job;
     if (
       nextJob &&
@@ -240,7 +236,7 @@ export function EmbeddedStudio({
       .callTool("list_projects", {})
       .then((result) => {
         if (alive) {
-          setProjects((result.structuredContent.projects ?? []).filter((item) => item.language === "english"));
+          setProjects(result.structuredContent.projects ?? []);
           setLoading(false);
         }
       })

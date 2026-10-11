@@ -1,149 +1,97 @@
-# vidio 项目上下文
+# vidio
 
-### 版本技术栈
+## Stack
 
 - **Framework**: Next.js 16 (App Router)
 - **Core**: React 19
-- **Language**: TypeScript 5
-- **UI 组件**: shadcn/ui (基于 Radix UI)
+- **Language**: TypeScript 5 (strict)
+- **UI**: shadcn/ui (Radix UI)
 - **Styling**: Tailwind CSS 4
+- **Agent**: LangGraph / LangChain
+- **Durable jobs**: PostgreSQL + pg-boss
+- **Media**: FFmpeg / FFprobe
+- **ChatGPT App**: MCP SDK with the MCP Apps extension
 
-## 目录结构
+## Directory structure
 
 ```
-├── public/                 # 静态资源
-├── scripts/                # 构建与启动脚本
-│   ├── build.sh            # 构建脚本
-│   ├── dev.sh              # 开发环境启动脚本
-│   ├── prepare.sh          # 预处理脚本
-│   └── start.sh            # 生产环境启动脚本
+├── migrations/             # PostgreSQL migrations (run with pnpm db:migrate)
+├── public/                 # Static assets (brand assets under public/assets)
+├── scripts/                # Build, start, validation and test scripts
 ├── src/
-│   ├── app/                # 页面路由与布局
-│   │   ├── page.tsx        # 对话式 Agent 主页面
-│   │   └── api/            # API 路由
-│   │       ├── chat-agent/ # 对话式 Agent API (SSE 流式)
-│   │       ├── agent/      # LangGraph 工作流 Agent API
-│   │       └── upload-image/ # 图片上传 API
-│   ├── agent/              # Agent 核心逻辑
-│   │   ├── chat-node.ts    # 对话式 Agent 节点
-│   │   ├── chat-state.ts   # 对话式 Agent 状态定义
-│   │   ├── tools.ts        # Agent 工具函数
-│   │   ├── graph.ts        # LangGraph 工作流图
-│   │   ├── state.ts        # LangGraph 状态定义
-│   │   ├── nodes/          # LangGraph 节点函数
-│   │   └── index.ts        # Agent 入口
-│   ├── components/ui/      # Shadcn UI 组件库
-│   ├── hooks/              # 自定义 Hooks
-│   ├── lib/                # 工具库
-│   │   └── utils.ts        # 通用工具函数 (cn)
-│   │   └── storage.ts      # 对象存储工具
-│   └── server.ts           # 自定义服务端入口
-├── next.config.ts          # Next.js 配置
-├── package.json            # 项目依赖管理
-└── tsconfig.json           # TypeScript 配置
+│   ├── app/                # App Router pages and API routes
+│   │   ├── page.tsx        # Legacy conversational website
+│   │   ├── studio/         # Legacy studio page
+│   │   └── api/            # API routes (chat-agent, agent, studio, mcp, media, uploads)
+│   ├── agent/              # Legacy LangGraph agent (chat-node, tools, graph, nodes)
+│   ├── chatgpt/            # Embedded MCP Apps studio bundle (English-only)
+│   ├── studio/             # Managed studio: MCP contracts, service, store, worker, composition
+│   ├── components/ui/      # shadcn/ui components
+│   ├── hooks/              # Custom hooks
+│   ├── lib/                # Shared utilities (storage, redaction, utils)
+│   ├── proxy.ts            # Mode-based route isolation
+│   └── server.ts           # Custom Node server entry (port 5000)
+├── next.config.ts
+├── package.json
+└── tsconfig.json
 ```
 
-- 项目文件（如 app 目录、pages 目录、components 等）默认初始化到 `src/` 目录下。
+## Product rules
 
-## Agent 架构说明
+- The product name is **vidio** (lowercase) everywhere a name is shown.
+- The application is **English-only**: UI copy, prompts, scripts, voiceover, captions, logs and errors. Do not add other language options.
+- Do not run paid video generation during tests; use the demo mode and mocks.
 
-本项目采用**问答式 Agent**架构，专精于带货视频生成。
+## Architecture
 
-### 核心组件
+### Legacy conversational agent (`src/agent`)
 
-1. **对话节点 (`chat-node.ts`)**：
-   - 使用 `doubao-seed-1-8-251228` 大模型进行对话
-   - 理解用户意图，决定调用哪个工具
-   - 支持多轮工具调用和自动执行流程
-   - SSE 流式输出，实时推送进度
+1. **Chat node (`chat-node.ts`)**: drives the conversation with the configured LLM, decides which tool to call, supports multi-step tool calls and streams progress over SSE.
+2. **Tools (`tools.ts`)**:
+   - `uploadAndIdentifyProduct`: upload images and identify the product
+   - `generateScripts`: write the voiceover script and visual prompts
+   - `generateVideoSegments`: generate segments (TTS + video)
+   - `composeFinalVideo`: compose the final video (music, subtitles)
+   - `regenerateSegment`: regenerate one segment
+   - `modifyScript`: edit a script line
+3. **State (`chat-state.ts`)**: `productName`, `productImageUrl`, `features`, `scripts`, `segments`, `finalVideoUrl`, `currentStage`.
 
-2. **工具函数 (`tools.ts`)**：
-   - `uploadAndIdentifyProduct`: 上传图片并识别商品信息
-   - `generateScripts`: 生成带货文案 + 画面 Prompt
-   - `generateVideoSegments`: 生成视频片段（TTS + 视频生成）
-   - `composeFinalVideo`: 合成最终视频（支持 BGM、字幕）
-   - `regenerateSegment`: 重新生成单个视频片段
-   - `modifyScript`: 修改文案内容
+Flow: identify product → write script → wait for approval → generate segments → wait for selection → compose → download. Skip waits only when the user explicitly asks to.
 
-3. **状态管理 (`chat-state.ts`)**：
-   - `productName`: 商品名称
-   - `productImageUrl`: 商品图片 URL
-   - `features`: 核心卖点列表
-   - `scripts`: 带货文案列表（含画面 Prompt）
-   - `segments`: 视频片段列表
-   - `finalVideoUrl`: 最终视频 URL
-   - `currentStage`: 当前阶段
+Stages: `idle`, `identifying`, `product_identified`, `script_generated`, `video_generated`, `composing`, `done`.
 
-### 工作流程（分阶段执行）
+API: `/api/chat-agent` (POST streams SSE, GET returns session state, DELETE clears the session).
 
-```
-用户输入 → 识别商品 → 自动执行
-识别成功 → 生成文案 → 自动执行
-文案生成 → 等待反馈 → 显示结果，等待用户确认/驳回
-确认文案 → 生成视频 → 自动执行
-视频片段 → 等待反馈 → 显示结果，等待用户选择/确认合成
-确认合成 → 输出成片 → 自动执行，显示下载链接
-```
+### Managed studio and MCP (`src/studio`, `src/chatgpt`)
 
-**特殊规则**：
-- 如果用户明确表示"不需要反馈/直接生成/直接合成"，则跳过等待环节
-- 每个步骤的结果必须返回显示给用户
-- 使用 SSE 流式输出，实时推送进度和结果
+- MCP endpoint `/mcp` (Streamable HTTP, bearer auth) exposes `identify_product`, `generate_scripts`, `start_video_job`, `get_video_job_status`, `regenerate_segment`, `compose_final_video`, `get_final_video`.
+- Paid operations require a server-issued single-use consent token.
+- Jobs, segments and assets are durable in PostgreSQL; the worker is separate from the web process.
 
-### 阶段定义
+### Providers
 
-- `idle`: 初始状态
-- `identifying`: 正在识别商品
-- `product_identified`: 商品已识别（自动进入下一阶段）
-- `script_generated`: 文案已生成（等待用户反馈）
-- `video_generated`: 视频片段已生成（等待用户反馈）
-- `composing`: 正在合成最终视频
-- `done`: 视频完成，可下载
+The legacy path uses the third-party provider SDK configured through the `COZE_*` environment variables documented in `.env.example` (LLM, multimodal LLM, TTS, video generation, S3-compatible object storage). These are implementation dependencies, not branding.
 
-### API 调用
+## Package management
 
-- **对话式 Agent**: `/api/chat-agent` (SSE 流式输出)
-  - POST: 发送消息，返回 SSE 流
-  - GET: 获取会话状态
-  - DELETE: 清除会话
+Use **pnpm only**; npm and yarn are not allowed.
 
-### 依赖的火山引擎服务
+- `pnpm add <package>`, `pnpm add -D <package>`, `pnpm install`, `pnpm remove <package>`
 
-- **LLM**: `doubao-seed-1-8-251228` (对话调度)
-- **多模态 LLM**: 商品识别
-- **TTS**: `zh_female_shuangkuaisisi_moon_bigtts` (语音合成)
-- **视频生成**: `ep-20260514120705-pqv86` (视频生成模型)
-- **对象存储**: S3 兼容存储服务
+## Coding rules
 
-## 包管理规范
+- Write TypeScript in `strict` mode. Reuse declared variables, functions, types and imports; never reference undeclared identifiers.
+- No implicit `any` or `as any`; type parameters, return values, destructured items, event objects and `catch` errors, and remove unused variables and imports.
+- Do not hardcode absolute paths in `next.config`; use `path.resolve(__dirname, ...)`, `import.meta.dirname` or `process.cwd()`.
 
-**仅允许使用 pnpm** 作为包管理器，**严禁使用 npm 或 yarn**。
-**常用命令**：
-- 安装依赖：`pnpm add <package>`
-- 安装开发依赖：`pnpm add -D <package>`
-- 安装所有依赖：`pnpm install`
-- 移除依赖：`pnpm remove <package>`
+### Hydration
 
-## 开发规范
+1. Never use `typeof window`, `Date.now()`, `Math.random()` or other dynamic data directly in JSX. Use `'use client'` with `useEffect` + `useState` so dynamic content renders only after mount. Avoid invalid HTML nesting (e.g. `<div>` inside `<p>`).
+2. **Do not use `<head>`**; use the metadata API (https://nextjs.org/docs/app/api-reference/functions/generate-metadata).
+   1. Import third-party CSS and fonts at the top of `globals.css` or via `next/font`
+   2. Use ReactDOM `preload`, `preconnect` and `dns-prefetch`
+   3. For JSON-LD see https://nextjs.org/docs/app/guides/json-ld
 
-### 编码规范
+## UI
 
-- 默认按 TypeScript `strict` 心智写代码；优先复用当前作用域已声明的变量、函数、类型和导入，禁止引用未声明标识符或拼错变量名。
-- 禁止隐式 `any` 和 `as any`；函数参数、返回值、解构项、事件对象、`catch` 错误在使用前应有明确类型或先完成类型收窄，并清理未使用的变量和导入。
-
-### next.config 配置规范
-
-- 配置的路径不要写死绝对路径，必须使用 path.resolve(__dirname, ...)、import.meta.dirname 或 process.cwd() 动态拼接。
-
-### Hydration 问题防范
-
-1. 严禁在 JSX 渲染逻辑中直接使用 typeof window、Date.now()、Math.random() 等动态数据。**必须使用 'use client' 并配合 useEffect + useState 确保动态内容仅在客户端挂载后渲染**；同时严禁非法 HTML 嵌套（如 <p> 嵌套 <div>）。
-2. **禁止使用 head 标签**，优先使用 metadata，详见文档：https://nextjs.org/docs/app/api-reference/functions/generate-metadata
-   1. 三方 CSS、字体等资源可在 `globals.css` 中顶部通过 `@import` 引入或使用 next/font
-   2. preload, preconnect, dns-prefetch 通过 ReactDOM 的 preload、preconnect、dns-prefetch 方法引入
-   3. json-ld 可阅读 https://nextjs.org/docs/app/guides/json-ld
-
-## UI 设计与组件规范 (UI & Styling Standards)
-
-- 模板默认预装核心组件库 `shadcn/ui`，位于`src/components/ui/`目录下
-- Next.js 项目**必须默认**采用 shadcn/ui 组件、风格和规范，**除非用户指定用其他的组件和规范。**
+- shadcn/ui components live in `src/components/ui/`; use them by default unless the user asks for something else.

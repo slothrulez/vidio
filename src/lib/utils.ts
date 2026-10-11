@@ -6,40 +6,40 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 /**
- * 将本地文件路径转换为可访问的 URL
- * 开发环境：/workspace/projects/public/xxx -> /xxx
- * 生产环境：/tmp/xxx -> /api/file?path=/tmp/xxx
+ * Convert a local file path to a reachable URL
+ * Development: /workspace/projects/public/xxx -> /xxx
+ * Production: /tmp/xxx -> /api/file?path=/tmp/xxx
  * 
- * 对于外部视频URL（火山引擎等），使用代理API绕过浏览器访问限制
+ * External provider video URLs go through the proxy API to bypass browser restrictions
  */
 export function getAccessibleUrl(localPath: string, useProxy = true): string {
   if (!localPath) return '';
   
-  // 如果是火山引擎等外部视频URL，使用代理API
+  // External provider video URLs use the proxy API
   if (useProxy && isExternalVideoUrl(localPath)) {
     return `/api/video-proxy?url=${encodeURIComponent(localPath)}`;
   }
   
-  // 如果已经是 http(s) URL 但不是视频，直接返回
+  // Non-video http(s) URLs are returned as-is
   if (localPath.startsWith('http://') || localPath.startsWith('https://')) {
     return localPath;
   }
   
-  // 检查是否是生产环境
+  // Production check
   const isProduction = typeof window !== 'undefined' && 
-    !window.location.hostname.includes('dev.coze.site');
+    !['localhost', '127.0.0.1'].includes(window.location.hostname);
   
   if (isProduction) {
-    // 生产环境：通过 API 代理访问
+    // Production: serve through the API proxy
     return `/api/file?path=${encodeURIComponent(localPath)}`;
   } else {
-    // 开发环境：将绝对路径转换为相对路径
+    // Development: absolute path to relative path
     // /workspace/projects/public/xxx -> /xxx
     const publicPrefix = '/workspace/projects/public';
     if (localPath.startsWith(publicPrefix)) {
       return localPath.replace(publicPrefix, '');
     }
-    // 如果已经是相对路径，直接返回
+    // Already relative
     if (localPath.startsWith('/')) {
       return localPath;
     }
@@ -48,17 +48,17 @@ export function getAccessibleUrl(localPath: string, useProxy = true): string {
 }
 
 /**
- * 判断是否是需要代理的外部视频URL
- * 火山引擎的原始URL通常包含 tos-cn-beijing.volces.com 或 coze-dianbo
- * 注意：对象存储签名URL (coze-coding-project.tos) 可以直接访问，不需要代理
+ * Whether an external video URL needs the proxy
+ * Raw provider URLs usually contain tos-cn-beijing.volces.com or coze-dianbo
+ * Signed object-storage URLs (coze-coding-project.tos) are reachable directly
  */
 function isExternalVideoUrl(url: string): boolean {
-  // 对象存储签名URL可以直接访问，不需要代理
+  // Signed storage URLs need no proxy
   if (url.includes('coze-coding-project.tos.coze.site')) {
     return false;
   }
   
-  // 火山引擎原始URL需要代理（有IP限制）
+  // Raw provider URLs need the proxy (IP restricted)
   const videoHosts = [
     'tos-cn-beijing.volces.com',
     'tos-cn-shanghai.volces.com',

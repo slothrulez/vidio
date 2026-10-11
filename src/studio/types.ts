@@ -10,7 +10,7 @@ export const projectSchema = z.object({
   id: z.uuid(),
   name: z.string().min(1).max(100),
   revision: z.number().int(),
-  language: z.enum(["english", "mandarin", "cantonese"]),
+  language: z.literal("english"),
   ratio: z.enum(["16:9", "9:16", "1:1"]),
   stage: z.enum(["new", "identified", "scripted", "generated", "done"]),
   features: z.array(z.string()),

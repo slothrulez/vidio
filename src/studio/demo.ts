@@ -136,21 +136,7 @@ export async function executeDemo(
         `Built for your day. See how ${project.name} fits into your routine.`,
         `Your next everyday essential. Discover ${project.name} today.`,
       ];
-      const mandarin = [
-        `认识${project.name}，发现日常生活的新灵感。`,
-        `细节值得一看，近距离了解${project.name}。`,
-        `让${project.name}融入你的日常。`,
-        `发现你的下一件日常好物：${project.name}。`,
-      ];
-      const cantonese = [
-        `認識${project.name}，發現日常生活嘅新靈感。`,
-        `睇真啲細節，近距離了解${project.name}。`,
-        `等${project.name}融入你嘅日常生活。`,
-        `發現你下一件日常好物：${project.name}。`,
-      ];
-      project.scripts = (
-        project.language === "english" ? english : project.language === "cantonese" ? cantonese : mandarin
-      ).map((script, id) => ({
+      project.scripts = english.map((script, id) => ({
         id: id + 1,
         script,
         prompt: `Studio product close-up, soft purple lighting, scene ${id + 1}`,

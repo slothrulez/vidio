@@ -20,7 +20,7 @@ import {
   Trash2,
 } from "lucide-react";
 
-// 消息类型
+// Message type
 interface Message {
   id: string;
   role: "user" | "assistant" | "system";
@@ -30,7 +30,7 @@ interface Message {
   data?: Record<string, unknown>;
 }
 
-// 会话状态
+// Session state
 interface SessionState {
   productImageUrl?: string;
   productName?: string;
@@ -49,12 +49,12 @@ interface SessionState {
 }
 
 export default function ChatAgentPage() {
-  // 状态
+  // State
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "welcome",
       role: "assistant",
-      content: "您好！我是 vidio，专精于带货短视频生成。\n\n我可以帮您：\n1. 上传商品图片，自动识别商品和卖点\n2. 生成带货文案\n3. 生成带货视频片段\n4. 合成最终视频\n\n请上传您的商品图片，开始创作吧！",
+      content: "Hi! I am vidio, your product video assistant.\n\nI can help you:\n1. Upload product images and identify the product and selling points\n2. Write the promotional script\n3. Generate product video clips\n4. Compose the final video\n\nUpload a product image to get started!",
       timestamp: new Date(),
     },
   ]);
@@ -67,22 +67,22 @@ export default function ChatAgentPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   
-  // 自动滚动到底部
+  // Auto-scroll to the bottom
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages]);
   
-  // 发送消息
+  // Send a message
   const sendMessage = async (content: string, imageUrl?: string) => {
     if (!content.trim() && !imageUrl) return;
     
-    // 添加用户消息
+    // Add the user message
     const userMessage: Message = {
       id: `user_${Date.now()}`,
       role: "user",
-      content: imageUrl ? `${content}\n[已上传商品图片]` : content,
+      content: imageUrl ? `${content}\n[Uploaded a product image]` : content,
       timestamp: new Date(),
       data: imageUrl ? { imageUrl } : undefined,
     };
@@ -90,7 +90,7 @@ export default function ChatAgentPage() {
     setInputValue("");
     setIsLoading(true);
     
-    // 创建助手消息（流式）
+    // Create the streaming assistant message
     const assistantMessage: Message = {
       id: `assistant_${Date.now()}`,
       role: "assistant",
@@ -101,7 +101,7 @@ export default function ChatAgentPage() {
     setMessages(prev => [...prev, assistantMessage]);
     
     try {
-      // 调用 Chat Agent API
+      // Call the chat agent API
       const response = await fetch("/api/chat-agent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -114,12 +114,12 @@ export default function ChatAgentPage() {
       });
       
       if (!response.ok) {
-        throw new Error("请求失败");
+        throw new Error("Request failed");
       }
       
-      // 处理 SSE 流
+      // Handle the SSE stream
       const reader = response.body?.getReader();
-      if (!reader) throw new Error("无法获取响应流");
+      if (!reader) throw new Error("Could not read the response stream");
       
       const decoder = new TextDecoder();
       let buffer = "";
@@ -130,7 +130,7 @@ export default function ChatAgentPage() {
         
         buffer += decoder.decode(value, { stream: true });
         
-        // 解析 SSE 数据
+        // Parse SSE data
         const lines = buffer.split("\n");
         buffer = lines.pop() || "";
         
@@ -139,10 +139,10 @@ export default function ChatAgentPage() {
             try {
               const eventData = JSON.parse(line.slice(6));
               
-              // 处理不同类型的事件
+              // Handle each event type
               switch (eventData.type) {
                 case "text":
-                  // 流式文本
+                  // Streamed text
                   setMessages(prev =>
                     prev.map(m =>
                       m.id === assistantMessage.id
@@ -153,18 +153,18 @@ export default function ChatAgentPage() {
                   break;
                 
                 case "tool_call":
-                  // 工具调用通知
+                  // Tool call notification
                   setMessages(prev =>
                     prev.map(m =>
                       m.id === assistantMessage.id
-                        ? { ...m, content: m.content + `\n🔧 正在调用工具...` }
+                        ? { ...m, content: m.content + `\n🔧 Calling a tool...` }
                         : m
                     )
                   );
                   break;
                 
                 case "tool_result":
-                  // 工具结果
+                  // Tool result
                   setMessages(prev =>
                     prev.map(m =>
                       m.id === assistantMessage.id
@@ -175,13 +175,13 @@ export default function ChatAgentPage() {
                   break;
                 
                 case "state_update":
-                  // 状态更新
+                  // State update
                   setSessionId(eventData.sessionId);
                   setSessionState(eventData.state);
                   break;
                 
                 case "complete":
-                  // 完成
+                  // Done
                   setMessages(prev =>
                     prev.map(m =>
                       m.id === assistantMessage.id
@@ -192,18 +192,18 @@ export default function ChatAgentPage() {
                   break;
                 
                 case "error":
-                  // 错误
+                  // Error
                   setMessages(prev =>
                     prev.map(m =>
                       m.id === assistantMessage.id
-                        ? { ...m, content: m.content + `\n❌ 错误: ${eventData.content}`, isStreaming: false }
+                        ? { ...m, content: m.content + `\n❌ Error: ${eventData.content}`, isStreaming: false }
                         : m
                     )
                   );
                   break;
               }
             } catch {
-              // 解析失败，忽略
+              // Ignore parse failures
             }
           }
         }
@@ -211,11 +211,11 @@ export default function ChatAgentPage() {
       
       setIsLoading(false);
     } catch (error) {
-      console.error("发送消息失败:", error);
+      console.error("Failed to send message:", error);
       setMessages(prev =>
         prev.map(m =>
           m.id === assistantMessage.id
-            ? { ...m, content: `抱歉，处理过程中出现了错误：${error instanceof Error ? error.message : "未知错误"}`, isStreaming: false }
+            ? { ...m, content: `Sorry, something went wrong: ${error instanceof Error ? error.message : "Unknown error"}`, isStreaming: false }
             : m
         )
       );
@@ -223,12 +223,12 @@ export default function ChatAgentPage() {
     }
   };
   
-  // 上传图片
+  // Upload an image
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     
-    // 上传到服务器
+    // Upload to the server
     const formData = new FormData();
     formData.append("file", file);
     
@@ -239,21 +239,21 @@ export default function ChatAgentPage() {
       });
       
       if (!response.ok) {
-        throw new Error("上传失败");
+        throw new Error("Upload failed");
       }
       
       const data = await response.json();
       setUploadedImageUrl(data.url);
       
-      // 自动发送消息
-      sendMessage("请帮我分析这张商品图片，识别商品信息并提取卖点", data.url);
+      // Send the message automatically
+      sendMessage("Please analyse this product image, identify the product and extract its selling points", data.url);
     } catch (error) {
-      console.error("上传图片失败:", error);
-      alert("上传图片失败，请重试");
+      console.error("Image upload failed:", error);
+      alert("Image upload failed, please try again");
     }
   };
   
-  // 清除会话
+  // Clear the session
   const clearSession = async () => {
     if (sessionId) {
       await fetch(`/api/chat-agent?sessionId=${sessionId}`, { method: "DELETE" });
@@ -265,15 +265,15 @@ export default function ChatAgentPage() {
       {
         id: "welcome_new",
         role: "assistant",
-        content: "会话已清除。请上传新的商品图片，开始新的创作！",
+        content: "Session cleared. Upload a new product image to start a new project!",
         timestamp: new Date(),
       },
     ]);
   };
   
-  // 渲染消息内容
+  // Render message content
   const renderMessageContent = (message: Message) => {
-    // 如果有视频片段数据，显示视频卡片
+    // Show video cards when segments exist
     if (message.data?.segments && sessionState.segments) {
       return (
         <div className="space-y-4">
@@ -282,8 +282,8 @@ export default function ChatAgentPage() {
             {sessionState.segments.map((segment, index) => (
               <Card key={`segment-${segment.id}-${index}`} className="p-3">
                 <div className="flex items-center gap-2 mb-2">
-                  <Badge variant="outline">片段 {segment.id}</Badge>
-                  <span className="text-xs text-gray-500">{segment.duration}秒</span>
+                  <Badge variant="outline">Segment {segment.id}</Badge>
+                  <span className="text-xs text-gray-500">{segment.duration}s</span>
                 </div>
                 {segment.videoUrl ? (
                   <video
@@ -293,7 +293,7 @@ export default function ChatAgentPage() {
                   />
                 ) : (
                   <div className="w-full aspect-video bg-gray-800 rounded-lg mb-2 flex items-center justify-center">
-                    <p className="text-gray-400 text-sm">视频生成中...</p>
+                    <p className="text-gray-400 text-sm">Generating video...</p>
                   </div>
                 )}
                 <p className="text-xs text-gray-600">{segment.script}</p>
@@ -304,7 +304,7 @@ export default function ChatAgentPage() {
       );
     }
     
-    // 如果有最终视频，显示下载按钮
+    // Show the download button when the final video exists
     if (message.data?.finalVideoUrl || sessionState.finalVideoUrl) {
       return (
         <div className="space-y-4">
@@ -317,48 +317,48 @@ export default function ChatAgentPage() {
             />
             <Button className="w-full" variant="default">
               <Download className="w-4 h-4 mr-2" />
-              下载完整视频
+              Download the full video
             </Button>
           </Card>
         </div>
       );
     }
     
-    // 普通文本消息
+    // Plain text message
     return (
       <div className="text-sm whitespace-pre-wrap">{message.content}</div>
     );
   };
   
-  // 当前阶段提示
+  // Current stage hint
   const getStageHint = () => {
     switch (sessionState.currentStage) {
       case "upload":
-        return "已识别商品，可以确认信息后继续生成文案";
+        return "Product identified. Confirm the details, then write the script";
       case "scripts":
-        return "已生成文案，可以修改后继续生成视频";
+        return "Script ready. Edit it, then generate the video";
       case "segments":
-        return "已生成视频片段，可以确认后合成最终视频";
+        return "Video segments ready. Confirm them, then compose the final video";
       case "done":
-        return "视频已完成，可以下载使用";
+        return "Your video is ready to download";
       default:
-        return "请上传商品图片开始";
+        return "Upload a product image to begin";
     }
   };
   
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
       <div className="max-w-4xl mx-auto p-4 py-8">
-        {/* 标题 */}
+        {/* Title */}
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-gray-800 flex items-center justify-center gap-2">
             <Sparkles className="w-8 h-8 text-purple-600" />
             vidio
           </h1>
-          <p className="text-gray-500 mt-2">AI Agent 驱动的带货短视频生成工具</p>
+          <p className="text-gray-500 mt-2">AI agent for short product videos</p>
         </div>
         
-        {/* 状态卡片 */}
+        {/* Status card */}
         {sessionState.productName && (
           <Card className="mb-4 p-4 bg-white/80 backdrop-blur">
             <div className="flex items-center justify-between">
@@ -393,7 +393,7 @@ export default function ChatAgentPage() {
           </Card>
         )}
         
-        {/* 对话区域 */}
+        {/* Conversation */}
         <Card className="bg-white/80 backdrop-blur mb-4">
           <ScrollArea className="h-[500px] p-4">
             <div ref={scrollRef} className="space-y-4">
@@ -420,12 +420,12 @@ export default function ChatAgentPage() {
                 </div>
               ))}
               
-              {/* 加载提示 */}
+              {/* Loading hint */}
               {isLoading && messages[messages.length - 1]?.role === "user" && (
                 <div className="flex justify-start">
                   <div className="bg-gray-100 rounded-lg p-4">
                     <Loader2 className="w-4 h-4 animate-spin inline mr-2" />
-                    正在思考...
+                    Thinking...
                   </div>
                 </div>
               )}
@@ -433,10 +433,10 @@ export default function ChatAgentPage() {
           </ScrollArea>
         </Card>
         
-        {/* 输入区域 */}
+        {/* Input area */}
         <Card className="bg-white/80 backdrop-blur p-4">
           <div className="flex gap-4">
-            {/* 图片上传 */}
+            {/* Image upload */}
             <div className="relative">
               <input
                 type="file"
@@ -446,16 +446,16 @@ export default function ChatAgentPage() {
               />
               <Button variant="outline" className="relative">
                 <ImageIcon className="w-4 h-4 mr-2" />
-                上传图片
+                Upload image
               </Button>
             </div>
             
-            {/* 文本输入 */}
+            {/* Text input */}
             <Input
               ref={inputRef}
               value={inputValue}
               onChange={e => setInputValue(e.target.value)}
-              placeholder="输入您的需求，例如：生成文案、合成视频..."
+              placeholder="Tell me what you need, e.g. write the script, compose the video..."
               className="flex-1"
               onKeyDown={e => {
                 if (e.key === "Enter" && !e.shiftKey) {
@@ -465,43 +465,43 @@ export default function ChatAgentPage() {
               }}
             />
             
-            {/* 发送按钮 */}
+            {/* Send button */}
             <Button
               onClick={() => sendMessage(inputValue)}
               disabled={isLoading || (!inputValue.trim() && !uploadedImageUrl)}
               className="bg-gradient-to-r from-blue-600 to-purple-600"
             >
               <Send className="w-4 h-4 mr-2" />
-              发送
+              Send
             </Button>
           </div>
           
-          {/* 快捷操作提示 */}
+          {/* Quick actions */}
           <div className="flex gap-2 mt-4 text-sm text-gray-500">
-            <span>快捷操作：</span>
+            <span>Quick actions:</span>
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => sendMessage("请生成带货文案")}
+              onClick={() => sendMessage("Write the promotional script")}
             >
               <FileText className="w-3 h-3 mr-1" />
-              生成文案
+              Write script
             </Button>
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => sendMessage("请生成视频片段")}
+              onClick={() => sendMessage("Generate the video segments")}
             >
               <Video className="w-3 h-3 mr-1" />
-              生成视频
+              Generate video
             </Button>
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => sendMessage("请合成最终视频")}
+              onClick={() => sendMessage("Compose the final video")}
             >
               <Sparkles className="w-3 h-3 mr-1" />
-              合成视频
+              Compose video
             </Button>
           </div>
         </Card>

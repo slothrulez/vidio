@@ -1,6 +1,6 @@
 /**
- * 商品识别节点
- * 使用 LLM 多模态能力识别商品图片
+ * Product identification node
+ * Uses the multimodal LLM to identify the product image
  */
 
 import { AgentStateType, Step } from "../state";
@@ -8,11 +8,11 @@ import { LLMClient, Config, Message } from "coze-coding-dev-sdk";
 import { safeLogError } from '@/lib/log-redact';
 
 export async function identifyProductNode(state: AgentStateType): Promise<Partial<AgentStateType>> {
-  console.log("[Agent] 商品识别节点开始执行");
+  console.log("[Agent] product identification node started");
   
   if (!state.productImageUrl) {
     return {
-      errors: [...state.errors, "缺少商品图片URL"],
+      errors: [...state.errors, "Missing product image URL"],
       currentStep: Step.ERROR,
     };
   }
@@ -23,27 +23,27 @@ export async function identifyProductNode(state: AgentStateType): Promise<Partia
   const messages: Message[] = [
     {
       role: "system",
-      content: `你是一个专业的商品识别专家。请根据图片识别商品信息。
+      content: `You are a product identification expert. Identify the product in the image and answer in English.
 
-请严格按照以下JSON格式返回结果，不要添加任何其他文字：
+Return strictly this JSON with no other text:
 {
-  "productName": "商品名称（简洁明确，不超过10个字）",
-  "productType": "商品类型分类（如：母婴用品、家居用品、电子产品等）",
-  "materials": ["材质1", "材质2"],
-  "features": ["特点1", "特点2", "特点3"],
-  "suggestedPoints": ["建议卖点1", "建议卖点2", "建议卖点3"]
+  "productName": "product name (concise, at most 5 words)",
+  "productType": "product category (e.g. baby products, home goods, electronics)",
+  "materials": ["material 1", "material 2"],
+  "features": ["feature 1", "feature 2", "feature 3"],
+  "suggestedPoints": ["selling point 1", "selling point 2", "selling point 3"]
 }
 
-注意：
-1. productName 要简洁，适合作为文件夹名称
-2. materials 是材质建议（如：304不锈钢、玻璃、PP塑料等）
-3. features 是产品特点（如：便携轻便、美观时尚、耐用结实等）
-4. suggestedPoints 是适合带货的卖点文案建议（每条15-25字）`,
+Notes:
+1. productName must be short enough to use as a folder name
+2. materials are suggested materials (e.g. 304 stainless steel, glass, PP plastic)
+3. features are product traits (e.g. lightweight, stylish, durable)
+4. suggestedPoints are promotional selling points (8-15 words each)`,
     },
     {
       role: "user",
       content: [
-        { type: "text", text: "请识别这张商品图片，提供商品信息和建议卖点。" },
+        { type: "text", text: "Identify this product image and provide product details and suggested selling points, in English." },
         {
           type: "image_url",
           image_url: { url: state.productImageUrl, detail: "high" },
@@ -58,10 +58,10 @@ export async function identifyProductNode(state: AgentStateType): Promise<Partia
       temperature: 0.3,
     });
     
-    // 解析 JSON 结果
+    // Parse the JSON result
     let jsonStr = response.content;
     
-    // 提取 JSON 部分（如果有多余的文字）
+    // Extract the JSON part if extra text is present
     const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       jsonStr = jsonMatch[0];
@@ -69,20 +69,20 @@ export async function identifyProductNode(state: AgentStateType): Promise<Partia
     
     const result = JSON.parse(jsonStr);
     
-    console.log(`[Agent] 商品识别完成: ${result.productName}`);
+    console.log(`[Agent] product identified: ${result.productName}`);
     
     return {
       productName: result.productName || state.productName,
-      productType: result.productType || "通用商品",
+      productType: result.productType || "General product",
       selectedMaterials: result.materials || [],
       selectedFeatures: result.features || [],
       customSellingPoints: result.suggestedPoints || [],
       currentStep: Step.IDENTIFY_PRODUCT,
     };
   } catch (error) {
-    console.error("[Agent] 商品识别失败:", safeLogError(error));
+    console.error("[Agent] product identification failed:", safeLogError(error));
     return {
-      errors: [...state.errors, `商品识别失败: ${error}`],
+      errors: [...state.errors, `Product identification failed: ${error}`],
       currentStep: Step.ERROR,
     };
   }

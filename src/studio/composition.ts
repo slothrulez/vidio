@@ -146,7 +146,7 @@ export async function composeOwnedSegments(
         "-c:s",
         "mov_text",
         "-metadata:s:s:0",
-        `language=${project.language === "cantonese" ? "yue" : project.language === "mandarin" ? "cmn" : "eng"}`,
+        "language=eng",
       );
     args.push(
       "-c:v",

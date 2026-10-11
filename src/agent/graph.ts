@@ -1,6 +1,6 @@
 /**
- * LangGraph 工作流图
- * 定义视频生成 Agent 的完整流程
+ * LangGraph workflow graph
+ * Defines the full video generation agent flow
  */
 
 import { StateGraph, END, START, StateType } from "@langchain/langgraph";
@@ -14,30 +14,30 @@ import {
 } from "./nodes";
 import { safeLogError } from '@/lib/log-redact';
 
-// 定义状态类型
+// State type
 type GraphState = typeof AgentState.State;
 
 /**
- * 条件路由函数
- * 根据当前状态决定下一步
+ * Conditional router
+ * Chooses the next step from the current state
  */
 function routeAfterInit(state: GraphState): string {
-  // 如果有错误，结束流程
+  // Stop on errors
   if (state.errors && state.errors.length > 0) {
     return "end";
   }
   
-  // 如果已有 scripts 和 prompts（video 模式），跳过 identify 和 scripts 节点
+  // With scripts and prompts (video mode), skip identify and scripts
   if (state.scripts && state.scripts.length > 0 && state.prompts && state.prompts.length > 0) {
     return "generateSegments";
   }
   
-  // 如果有图片URL，进行商品识别
+  // With an image URL, identify the product
   if (state.productImageUrl) {
     return "identify";
   }
   
-  // 否则直接生成脚本（用户已提供商品信息）
+  // Otherwise write the script (product info was provided)
   return "generateScripts";
 }
 
@@ -63,25 +63,25 @@ function routeAfterSegments(state: GraphState): string {
 }
 
 function routeAfterCompose(state: GraphState): string {
-  // 完成
+  // Done
   return "end";
 }
 
 /**
- * 创建 Agent 工作流图
+ * Build the agent workflow graph
  */
 export function createVideoAgentGraph() {
-  // 创建状态图
-  // 注意：节点名称不能与状态属性名称相同
+  // Create the state graph
+  // Node names must not collide with state keys
   const workflow = new StateGraph(AgentState)
-    // 添加节点
+    // Nodes
     .addNode("init", initNode)
     .addNode("identify", identifyProductNode)
     .addNode("generateScripts", generateScriptsNode)
     .addNode("generateSegments", generateSegmentsNode)
     .addNode("compose", composeFinalNode)
     
-    // 添加边
+    // Edges
     .addEdge(START, "init")
     .addConditionalEdges("init", routeAfterInit, {
       identify: "identify",
@@ -105,15 +105,15 @@ export function createVideoAgentGraph() {
       end: END,
     });
   
-  // 编译图
+  // Compile
   const app = workflow.compile();
   
   return app;
 }
 
 /**
- * Agent 执行器
- * 提供简单的 API 来执行 Agent
+ * Agent executor
+ * Simple API for running the agent
  */
 export class VideoAgentExecutor {
   private graph;
@@ -123,17 +123,17 @@ export class VideoAgentExecutor {
   }
   
   /**
-   * 执行完整的视频生成流程
-   * @param input 输入状态
-   * @param onProgress 进度回调（用于 SSE 流式输出）
+   * Run the full video generation flow
+   * @param input initial state
+   * @param onProgress progress callback for SSE streaming
    */
   async execute(
     input: Partial<GraphState>,
     onProgress?: (event: { step: string; message: string; data?: Record<string, unknown> }) => void
   ): Promise<GraphState> {
-    console.log("[AgentExecutor] 开始执行 Agent");
+    console.log("[AgentExecutor] starting the agent");
     
-    // 初始化状态
+    // Initial state
     const initialState: GraphState = {
       productImageUrl: input.productImageUrl || "",
       productImageLocalPath: input.productImageLocalPath || "",
@@ -157,16 +157,16 @@ export class VideoAgentExecutor {
       taskId: "",
     };
     
-    // 执行图
+    // Run the graph
     try {
       const result = await this.graph.invoke(initialState);
       const finalState = result as GraphState;
       
-      // 发送完成事件
+      // Emit the completion event
       if (onProgress) {
         onProgress({
           step: "complete",
-          message: "视频生成完成",
+          message: "Video generation complete",
           data: {
             finalVideoUrl: finalState.finalVideoUrl,
             subtitles: finalState.finalSubtitles,
@@ -176,12 +176,12 @@ export class VideoAgentExecutor {
       
       return finalState;
     } catch (error) {
-      console.error("[AgentExecutor] 执行失败:", safeLogError(error));
+      console.error("[AgentExecutor] run failed:", safeLogError(error));
       
       if (onProgress) {
         onProgress({
           step: "error",
-          message: `执行失败: ${error}`,
+          message: `Run failed: ${error}`,
         });
       }
       
@@ -193,12 +193,12 @@ export class VideoAgentExecutor {
   }
   
   /**
-   * 流式执行（返回每个节点的状态更新）
+   * Streaming run (yields each node's state update)
    */
   async *streamExecute(
     input: Partial<GraphState>
   ): AsyncGenerator<{ node: string; state: Partial<GraphState> }> {
-    console.log("[AgentExecutor] 开始流式执行 Agent");
+    console.log("[AgentExecutor] starting the streaming agent run");
     
     const initialState: GraphState = {
       productImageUrl: input.productImageUrl || "",
@@ -226,7 +226,7 @@ export class VideoAgentExecutor {
     const stream = await this.graph.stream(initialState);
     
     for await (const chunk of stream) {
-      // chunk 是 { nodeName: stateUpdate } 格式
+      // chunk has the shape { nodeName: stateUpdate }
       const chunkObj = chunk as Record<string, Partial<GraphState>>;
       const nodeNames = Object.keys(chunkObj);
       if (nodeNames.length > 0) {
@@ -242,5 +242,5 @@ export class VideoAgentExecutor {
   }
 }
 
-// 导出单例
+// Singleton export
 export const videoAgent = new VideoAgentExecutor();

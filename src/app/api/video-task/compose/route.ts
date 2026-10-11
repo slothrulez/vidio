@@ -20,7 +20,7 @@ function sendEvent(controller: ReadableStreamDefaultController, data: StreamData
 }
 
 /**
- * 合成最终视频
+ * Compose the final video
  * POST /api/video-task/compose
  * Body: { folderPath: string, segments: [{ audioPath, videoPath, script }] }
  */
@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
         };
 
         if (!folderPath || !segments || segments.length === 0) {
-          sendEvent(controller, { type: 'error', content: '缺少必要参数' });
+          sendEvent(controller, { type: 'error', content: 'Missing required parameters' });
           controller.close();
           return;
         }
@@ -49,17 +49,17 @@ export async function POST(request: NextRequest) {
         const outputDir = folderPath;
         const mergedVideos: string[] = [];
 
-        // Step 1: 合并每个视频的音频
+        // Step 1: merge audio into each video
         sendEvent(controller, { 
           type: 'merge_start', 
-          content: `正在合并 ${segments.length} 个视频片段的音频...` 
+          content: `Merging audio for ${segments.length} video segments...`
         });
 
         for (let i = 0; i < segments.length; i++) {
           const segment = segments[i];
           const mergedVideoPath = path.join(outputDir, `merged_${i + 1}.mp4`);
           
-          // 使用 FFmpeg 合并音频和视频
+          // Merge audio and video with FFmpeg
           const cmd = `ffmpeg -y -i "${segment.videoPath}" -i "${segment.audioPath}" -c:v copy -c:a aac -shortest "${mergedVideoPath}"`;
           execSync(cmd, { stdio: 'pipe' });
           
@@ -67,25 +67,25 @@ export async function POST(request: NextRequest) {
           
           sendEvent(controller, {
             type: 'merge_progress',
-            content: `已完成 ${i + 1}/${segments.length} 个视频片段的音频合并`,
+            content: `Merged audio for ${i + 1}/${segments.length} segments`,
           });
         }
 
-        // Step 2: 生成字幕文件
+        // Step 2: write the subtitle file
         const srtPath = path.join(outputDir, 'subtitles.srt');
         let srtContent = '';
         let currentTime = 0;
 
         for (let i = 0; i < segments.length; i++) {
           const segment = segments[i];
-          // 获取音频时长
+          // Audio duration
           const durationCmd = `ffprobe -v quiet -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${segment.audioPath}"`;
           const duration = parseFloat(execSync(durationCmd, { encoding: 'utf-8' }).trim());
           
           const startTime = currentTime;
           const endTime = currentTime + duration;
           
-          // SRT 时间格式
+          // SRT timestamp format
           const formatTime = (seconds: number) => {
             const h = Math.floor(seconds / 3600);
             const m = Math.floor((seconds % 3600) / 60);
@@ -103,54 +103,54 @@ export async function POST(request: NextRequest) {
 
         fs.writeFileSync(srtPath, srtContent, 'utf-8');
 
-        // Step 3: 拼接视频
+        // Step 3: concatenate
         sendEvent(controller, { 
           type: 'concat_start', 
-          content: '正在拼接视频片段...' 
+          content: 'Concatenating video segments...'
         });
 
-        // 创建文件列表
+        // File list
         const listPath = path.join(outputDir, 'filelist.txt');
         const listContent = mergedVideos.map(v => `file '${v}'`).join('\n');
         fs.writeFileSync(listPath, listContent, 'utf-8');
 
-        // 拼接视频
+        // Concatenate
         const concatenatedPath = path.join(outputDir, 'concatenated.mp4');
         const concatCmd = `ffmpeg -y -f concat -safe 0 -i "${listPath}" -c copy "${concatenatedPath}"`;
         execSync(concatCmd, { stdio: 'pipe' });
 
-        // Step 4: 添加字幕（可选）
+        // Step 4: subtitles (optional)
         const withSubtitlePath = path.join(outputDir, `with_subtitle_${Date.now()}.mp4`);
         
         if (embedSubtitle) {
           const subtitleCmd = `ffmpeg -y -i "${concatenatedPath}" -vf "subtitles='${srtPath.replace(/'/g, "'\\''")}'" -c:a copy "${withSubtitlePath}"`;
           execSync(subtitleCmd, { stdio: 'pipe' });
         } else {
-          // 不内嵌字幕，直接复制
+          // No burned-in subtitles; copy
           fs.copyFileSync(concatenatedPath, withSubtitlePath);
         }
 
-        // Step 5: 添加 BGM（可选）
+        // Step 5: background music (optional)
         const finalVideoPath = path.join(outputDir, `final_${Date.now()}.mp4`);
         
         if (bgmUrl) {
-          // 下载 BGM 文件
+          // Download the music
           const bgmPath = path.join(outputDir, 'bgm.mp3');
           const bgmResponse = await axios.get(bgmUrl, { responseType: 'arraybuffer' });
           fs.writeFileSync(bgmPath, bgmResponse.data);
           
-          // 添加 BGM，调节音量到 20%，并循环播放
+          // Mix in looped music at 20% volume
           const bgmCmd = `ffmpeg -y -i "${withSubtitlePath}" -i "${bgmPath}" -filter_complex "[1:a]volume=0.2,aloop=0:size=2e+09[bgm];[0:a][bgm]amix=inputs=2:duration=first[aout]" -map 0:v -map "[aout]" -c:v copy -c:a aac "${finalVideoPath}"`;
           execSync(bgmCmd, { stdio: 'pipe' });
           
-          // 清理临时 BGM 文件
+          // Remove the temporary music file
           fs.unlinkSync(bgmPath);
         } else {
-          // 没有 BGM，直接使用带字幕的视频
+          // No music; use the subtitled video
           fs.copyFileSync(withSubtitlePath, finalVideoPath);
         }
 
-        // 获取最终视频时长
+        // Final video duration
         const finalDurationCmd = `ffprobe -v quiet -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${finalVideoPath}"`;
         const finalDuration = parseFloat(execSync(finalDurationCmd, { encoding: 'utf-8' }).trim());
 
@@ -169,10 +169,10 @@ export async function POST(request: NextRequest) {
 
         controller.close();
       } catch (error) {
-        console.error('合成失败:', safeLogError(error));
+        console.error('Composition failed:', safeLogError(error));
         sendEvent(controller, {
           type: 'error',
-          content: error instanceof Error ? error.message : '合成失败',
+          content: error instanceof Error ? error.message : 'Composition failed',
         });
         controller.close();
       }

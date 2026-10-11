@@ -1,6 +1,6 @@
 /**
- * Agent 工具函数 - HTTP 请求调度
- * 只做 HTTP 请求调用现有 API，不内置业务逻辑
+ * Agent tools - HTTP request dispatch
+ * Only calls the existing APIs over HTTP; no business logic lives here
  */
 
 import axios from 'axios';
@@ -14,31 +14,31 @@ import { redactUrl, safeLogError } from '@/lib/log-redact';
 const getBaseUrl = () => {
   const domain = process.env.COZE_PROJECT_DOMAIN_DEFAULT;
   if (domain) {
-    // 如果已经包含协议，直接使用
+    // Use as-is when a protocol is present
     if (domain.startsWith('http://') || domain.startsWith('https://')) {
       return domain;
     }
-    // 否则添加 https 前缀
+    // Otherwise prefix https
     return `https://${domain}`;
   }
   return 'http://localhost:5000';
 };
 const BASE_URL = getBaseUrl();
 
-// 本地视频存储目录
+// Local video storage directory
 const getVideoStorageDir = (subDir: string) => {
   const env = process.env.COZE_PROJECT_ENV;
   const baseDir = env === 'PROD' ? '/tmp' : (process.env.COZE_WORKSPACE_PATH || '/workspace/projects');
   const videoDir = path.join(baseDir, 'public', 'videos', subDir);
   
-  // 确保目录存在
+  // Ensure the directory exists
   if (!fs.existsSync(videoDir)) {
     fs.mkdirSync(videoDir, { recursive: true });
   }
   return videoDir;
 };
 
-// 下载视频到本地（优先转存到对象存储）
+// Download a video (preferring object storage)
 async function downloadVideoToLocal(
   videoUrl: string, 
   subDir: string, 
@@ -48,49 +48,49 @@ async function downloadVideoToLocal(
   let signedUrl: string | null = null;
   let localPath: string | null = null;
   
-  // 优先尝试转存到对象存储（生成可访问的签名 URL）
+  // Try object storage first (yields a signed URL)
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
-      console.log(`[Tool] 尝试转存视频到对象存储 (尝试 ${attempt}/${retries}): ${redactUrl(videoUrl)}`);
+      console.log(`[Tool] copying video to object storage (attempt ${attempt}/${retries}): ${redactUrl(videoUrl)}`);
       
       const result = await uploadFromRemoteUrl(
         videoUrl,
         `${subDir}/${filename}`,
         'video/mp4',
-        60000 // 60秒超时
+        60000 // 60s timeout
       );
       
       signedUrl = result.signedUrl;
-      console.log(`[Tool] 视频已转存到对象存储，签名URL: ${redactUrl(signedUrl)}`);
+      console.log(`[Tool] video copied to object storage, signed URL: ${redactUrl(signedUrl)}`);
       break;
     } catch (error) {
-      console.error(`[Tool] 转存视频到对象存储失败 (尝试 ${attempt}):`, safeLogError(error));
+      console.error(`[Tool] copy to object storage failed (attempt ${attempt}):`, safeLogError(error));
       if (attempt < retries) {
         await new Promise(resolve => setTimeout(resolve, 2000 * attempt));
       }
     }
   }
   
-  // 备用方案：下载到本地存储
+  // Fallback: download to local storage
   if (!signedUrl) {
     const videoDir = getVideoStorageDir(subDir);
     const filePath = path.join(videoDir, filename);
     
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
-        console.log(`[Tool] 下载视频到本地存储 (尝试 ${attempt}/${retries}): ${redactUrl(videoUrl)}`);
+        console.log(`[Tool] downloading video locally (attempt ${attempt}/${retries}): ${redactUrl(videoUrl)}`);
         
         const response = await axios.get(videoUrl, {
           responseType: 'arraybuffer',
-          timeout: 60000 // 60秒超时
+          timeout: 60000 // 60s timeout
         });
         
         fs.writeFileSync(filePath, Buffer.from(response.data));
         localPath = `/videos/${subDir}/${filename}`;
-        console.log(`[Tool] 视频已保存到本地: [path]`);
+        console.log(`[Tool] video saved locally: [path]`);
         break;
       } catch (error) {
-        console.error(`[Tool] 下载视频到本地失败 (尝试 ${attempt}):`, safeLogError(error));
+        console.error(`[Tool] local download failed (attempt ${attempt}):`, safeLogError(error));
         if (attempt < retries) {
           await new Promise(resolve => setTimeout(resolve, 2000 * attempt));
         }
@@ -99,13 +99,13 @@ async function downloadVideoToLocal(
   }
   
   if (!signedUrl && !localPath) {
-    console.error(`[Tool] 下载视频最终失败: ${redactUrl(videoUrl)}`);
+    console.error(`[Tool] video download failed after retries: ${redactUrl(videoUrl)}`);
   }
   
   return { localPath, signedUrl };
 }
 
-// 工具结果类型
+// Tool result type
 export interface ToolResult {
   success: boolean;
   message: string;
@@ -113,7 +113,7 @@ export interface ToolResult {
   error?: string;
 }
 
-// 会话状态类型
+// Session state type
 export interface SessionState {
   productImageUrl?: string;
   productName?: string;
@@ -127,22 +127,22 @@ export interface SessionState {
     audioPath?: string;
     videoUrl?: string;
     audioUrl?: string;
-    localVideoPath?: string; // 本地视频路径（用于播放）
+    localVideoPath?: string; // local video path for playback
   }>;
   finalVideoUrl?: string;
-  localVideoPath?: string; // 本地最终视频路径
+  localVideoPath?: string; // local final video path
   finalVideoLocalPath?: string;
-  sessionId?: string; // 会话ID（用于视频文件夹命名）
+  sessionId?: string; // session ID used for the video folder name
   currentStage?: string;
 }
 
 /**
- * 1. 上传图片并识别商品（支持多图片：主图片 + 辅助图片）
- * 调用 /api/identify-product
- * @param imageUrl 主图片URL（重点参考）
- * @param auxiliaryImages 辅助图片URL列表（补充参考）
- * @param _productName 商品名称（可选）
- * @param customHeaders 自定义请求头
+ * 1. Upload images and identify the product (main image + supporting images)
+ * Calls /api/identify-product
+ * @param imageUrl main image URL (primary reference)
+ * @param auxiliaryImages supporting image URLs
+ * @param _productName optional product name
+ * @param customHeaders custom request headers
  */
 export async function uploadAndIdentifyProduct(
   imageUrl: string,
@@ -150,17 +150,17 @@ export async function uploadAndIdentifyProduct(
   _productName?: string,
   customHeaders?: Record<string, string>
 ): Promise<ToolResult> {
-  console.log('[Tool] 调用 /api/identify-product，主图片:', redactUrl(imageUrl));
+  console.log('[Tool] calling /api/identify-product, main image:', redactUrl(imageUrl));
   if (auxiliaryImages && auxiliaryImages.length > 0) {
-    console.log('[Tool] 辅助图片:', `${auxiliaryImages.length} image(s)`);
+    console.log('[Tool] supporting images:', `${auxiliaryImages.length} image(s)`);
   }
   
   try {
-    // 如果 imageUrl 是远程 URL，需要先下载再上传
+    // Remote imageUrl values are downloaded before upload
     const formData = new FormData();
     
     if (imageUrl.startsWith('http')) {
-      // 下载图片（添加超时和重试机制）
+      // Download the image with timeout and retries
       let imageBuffer: Buffer | null = null;
       const maxRetries = 3;
       
@@ -169,31 +169,31 @@ export async function uploadAndIdentifyProduct(
           const imageResponse = await axios.get(imageUrl, { 
             responseType: 'arraybuffer',
             headers: customHeaders,
-            timeout: 15000 // 15秒超时
+            timeout: 15000 // 15s timeout
           });
           imageBuffer = Buffer.from(imageResponse.data);
-          break; // 成功则退出重试循环
+          break; // success, stop retrying
         } catch (retryError: unknown) {
           if (axios.isAxiosError(retryError) && (retryError.code === 'ETIMEDOUT' || retryError.code === 'ECONNABORTED')) {
-            console.warn(`[Tool] 图片下载超时，重试 ${retry + 1}/${maxRetries}`);
+            console.warn(`[Tool] image download timed out, retry ${retry + 1}/${maxRetries}`);
             if (retry < maxRetries - 1) {
-              await new Promise(resolve => setTimeout(resolve, 2000)); // 等待2秒后重试
+              await new Promise(resolve => setTimeout(resolve, 2000)); // wait 2s before retrying
               continue;
             }
           }
-          throw retryError; // 其他错误或最后一次重试失败，抛出异常
+          throw retryError; // other errors or the last retry: rethrow
         }
       }
       
       if (!imageBuffer) {
-        throw new Error('图片下载失败，请检查图片URL是否可访问');
+        throw new Error('Image download failed; check that the image URL is reachable');
       }
       
       const imageFile = new File([new Uint8Array(imageBuffer)], 'product.jpg', { type: 'image/jpeg' });
-      formData.append('image', imageFile); // 主图片
-      formData.append('isMainImage', 'true'); // 标记为主图片
+      formData.append('image', imageFile); // main image
+      formData.append('isMainImage', 'true'); // mark as main image
       
-      // 下载并上传辅助图片
+      // Download and upload supporting images
       if (auxiliaryImages && auxiliaryImages.length > 0) {
         for (let i = 0; i < auxiliaryImages.length; i++) {
           const auxUrl = auxiliaryImages[i];
@@ -206,16 +206,16 @@ export async function uploadAndIdentifyProduct(
               });
               const auxBuffer = Buffer.from(auxResponse.data);
               const auxFile = new File([new Uint8Array(auxBuffer)], `auxiliary_${i}.jpg`, { type: 'image/jpeg' });
-              formData.append('auxiliaryImages', auxFile); // 辅助图片
-              console.log(`[Tool] 辅助图片${i + 1}已上传: ${redactUrl(auxUrl)}`);
+              formData.append('auxiliaryImages', auxFile); // supporting image
+              console.log(`[Tool] supporting image ${i + 1} uploaded: ${redactUrl(auxUrl)}`);
             } catch (auxError) {
-              console.warn(`[Tool] 辅助图片${i + 1}下载失败，跳过: ${redactUrl(auxUrl)}`);
+              console.warn(`[Tool] supporting image ${i + 1} download failed, skipped: ${redactUrl(auxUrl)}`);
             }
           }
         }
       }
     } else {
-      // 本地路径，读取文件
+      // Local path: read the file
       const fs = await import('fs');
       const imageBuffer = fs.readFileSync(imageUrl);
       const imageFile = new File([imageBuffer], 'product.jpg', { type: 'image/jpeg' });
@@ -236,7 +236,7 @@ export async function uploadAndIdentifyProduct(
     const result = response.data;
     return {
       success: true,
-      message: `商品识别完成：${result.productName}`,
+      message: `Product identified: ${result.productName}`,
       data: {
         productName: result.productName,
         productImageUrl: result.imageUrl || imageUrl,
@@ -246,35 +246,35 @@ export async function uploadAndIdentifyProduct(
       }
     };
   } catch (error) {
-    console.error('[Tool] identify-product 失败:', safeLogError(error));
+    console.error('[Tool] identify-product failed:', safeLogError(error));
     return {
       success: false,
-      message: '商品识别失败',
-      error: error instanceof Error ? error.message : '未知错误'
+      message: 'Product identification failed',
+      error: error instanceof Error ? error.message : 'Unknown error'
     };
   }
 }
 
 /**
- * 2. 生成带货文案
- * 调用 /api/generate-script
+ * 2. Write the promotional script
+ * Calls /api/generate-script
  */
 export async function generateScripts(
   productName: string,
   features: string[],
   productImageUrl?: string,
   customHeaders?: Record<string, string>,
-  voiceLanguage?: string // 配音语言：mandarin(普通话) 或 english(英语)
+  voiceLanguage?: string // voiceover language (always english)
 ): Promise<ToolResult> {
-  console.log('[Tool] 调用 /api/generate-script，配音语言:', voiceLanguage || 'mandarin');
+  console.log('[Tool] calling /api/generate-script, voiceover language:', voiceLanguage || 'english');
   
   try {
     const formData = new FormData();
     formData.append('productName', productName);
     formData.append('productSellingPoints', features.join(','));
-    formData.append('voiceLanguage', voiceLanguage || 'mandarin'); // 添加配音语言参数
+    formData.append('voiceLanguage', voiceLanguage || 'english'); // voiceover language
     
-    // 如果有图片，下载并上传
+    // Download and upload the image when present
     if (productImageUrl && productImageUrl.startsWith('http')) {
       const imageResponse = await axios.get(productImageUrl, { 
         responseType: 'arraybuffer',
@@ -285,8 +285,8 @@ export async function generateScripts(
       formData.append('productImage', imageFile);
     }
     
-    // generate-script 是 SSE 流式接口，我们收集最终结果
-    // 注意：发送FormData时不要手动设置Content-Type，axios会自动设置正确的boundary
+    // generate-script streams SSE; collect the final result
+    // Do not set Content-Type manually for FormData; axios adds the boundary
     const response = await axios.post(
       `${BASE_URL}/api/generate-script`,
       formData,
@@ -296,7 +296,7 @@ export async function generateScripts(
       }
     );
     
-    // 解析 SSE 响应获取文案和画面Prompt
+    // Parse the SSE response for scripts and visual prompts
     const lines = response.data.split('\n');
     const scripts: Array<{ id: number; script: string; prompt: string }> = [];
     
@@ -305,20 +305,20 @@ export async function generateScripts(
         try {
           const data = JSON.parse(line.slice(6));
           if (data.type === 'script_segment' && data.content) {
-            // 先添加脚本，prompt后续通过prompt_segment更新
+            // Add the script first; prompt_segment fills the prompt later
             scripts.push({
               id: data.content.id || data.segmentIndex + 1,
               script: data.content.script || data.content,
-              prompt: '' // 先留空，等待prompt_segment更新
+              prompt: '' // filled by prompt_segment
             });
           } else if (data.type === 'prompt_segment' && data.content) {
-            // 更新对应segment的prompt
+            // Update the matching segment's prompt
             const segmentId = data.content.id;
             const existingScript = scripts.find(s => s.id === segmentId);
             if (existingScript) {
               existingScript.prompt = data.content.prompt;
             } else {
-              // 如果还没添加script，先添加完整数据
+              // Add the full entry when the script is missing
               scripts.push({
                 id: segmentId,
                 script: data.content.script,
@@ -326,27 +326,27 @@ export async function generateScripts(
               });
             }
           } else if (data.type === 'done') {
-            // 从 done 事件获取完整数据
+            // Read the complete data from the done event
             const doneData = JSON.parse(data.content);
             if (doneData.segments && doneData.segments.length > 0) {
-              scripts.length = 0; // 清空之前的数据
+              scripts.length = 0; // reset earlier data
               for (const seg of doneData.segments) {
                 scripts.push({
                   id: seg.id || scripts.length + 1,
                   script: seg.script || '',
-                  prompt: seg.prompt || `${productName}产品展示，专业拍摄`
+                  prompt: seg.prompt || `${productName} product showcase, professional photography`
                 });
               }
             }
           }
         } catch {
-          // 忽略解析错误
+          // Ignore parse errors
         }
       }
     }
     
-    // 如果没有解析到，使用默认文案+Prompt（根据语言选择）
-    const lang = voiceLanguage || 'mandarin';
+    // Fall back to default English scripts and prompts when nothing was parsed
+    const lang = voiceLanguage || 'english';
     if (scripts.length === 0) {
       if (lang === 'english') {
         scripts.push(
@@ -357,78 +357,78 @@ export async function generateScripts(
         );
       } else {
         scripts.push(
-          { id: 1, script: `${productName}太棒了，强烈推荐！`, prompt: `${productName}全景展示，吸引眼球` },
-          { id: 2, script: `${features[0] || '品质'}过硬，性价比超高`, prompt: `${productName}细节特写，品质展示` },
-          { id: 3, script: `设计时尚，颜值爆表`, prompt: `${productName}外观展示，设计美感` },
-          { id: 4, script: `现在下单，限时优惠！`, prompt: `${productName}购买引导，促销氛围` }
+          { id: 1, script: `Meet ${productName}. You are going to love it!`, prompt: `${productName} wide shot, eye-catching` },
+          { id: 2, script: `Outstanding ${features[0] || 'quality'} at great value`, prompt: `${productName} detail close-up, quality showcase` },
+          { id: 3, script: `Stylish design that turns heads`, prompt: `${productName} exterior showcase, design aesthetics` },
+          { id: 4, script: `Order now for a limited-time offer!`, prompt: `${productName} call to action, promotional mood` }
         );
       }
     }
     
     return {
       success: true,
-      message: `文案生成完成，共 ${scripts.length} 段（含画面Prompt）`,
+      message: `Script ready: ${scripts.length} scenes with visual prompts`,
       data: { 
         scripts,
         currentStage: "script_generated"
       }
     };
   } catch (error) {
-    console.error('[Tool] generate-script 失败:', safeLogError(error));
-    // 降级返回默认文案（根据语言选择）
-    const lang = voiceLanguage || 'mandarin';
+    console.error('[Tool] generate-script failed:', safeLogError(error));
+    // Degrade to default English scripts
+    const lang = voiceLanguage || 'english';
     const scripts = lang === 'english' ? [
       { id: 1, script: `${productName} is amazing, highly recommended!` },
       { id: 2, script: `Quality is excellent, great value!` },
       { id: 3, script: `Fashionable design, stunning appearance!` },
       { id: 4, script: `Order now, limited time offer!` }
     ] : [
-      { id: 1, script: `${productName}太棒了，强烈推荐！` },
-      { id: 2, script: `品质过硬，性价比超高` },
-      { id: 3, script: `设计时尚，颜值爆表` },
-      { id: 4, script: `现在下单，限时优惠！` }
+      { id: 1, script: `Meet ${productName}. You are going to love it!` },
+      { id: 2, script: `Outstanding quality at great value` },
+      { id: 3, script: `Stylish design that turns heads` },
+      { id: 4, script: `Order now for a limited-time offer!` }
     ];
     return {
       success: true,
-      message: '文案已生成（默认）',
+      message: 'Script ready (default)',
       data: { scripts }
     };
   }
 }
 
 /**
- * 3. 生成视频片段
- * 调用 /api/generate-video (SSE 流式)
- * 使用每段的画面Prompt生成对应视频
- * @returns AsyncGenerator，实时yield segment事件，最后返回ToolResult
+ * 3. Generate video segments
+ * Calls /api/generate-video (SSE stream)
+ * Each scene's visual prompt drives its video
+ * @returns AsyncGenerator yielding segment events live, then the ToolResult
  */
 export async function* generateVideoSegmentsStream(
   scripts: Array<{ id: number; script: string; prompt?: string }>,
   productImageUrl: string,
   productName: string,
   customHeaders?: Record<string, string>,
-  ratio?: string // 视频比例：'16:9'横版 或 '9:16'竖版
+  ratio?: string // video ratio: '16:9' landscape or '9:16' portrait
 ): AsyncGenerator<{ type: 'segment_video' | 'result'; content?: unknown; data?: unknown }> {
-  const videoRatio = ratio || '16:9'; // 默认16:9横版
-  console.log('[Tool] 调用 /api/generate-video，每段使用对应Prompt');
-  console.log(`[Tool] scripts数量=${scripts.length}, 视频比例=${videoRatio}`);
+  const videoRatio = ratio || '16:9'; // default 16:9 landscape
+  console.log('[Tool] calling /api/generate-video with a prompt per scene');
+  console.log(`[Tool] scripts=${scripts.length}, ratio=${videoRatio}`);
   
   try {
     const formData = new FormData();
     formData.append('productName', productName);
-    formData.append('imageUrl', productImageUrl); // API 期望的参数名
-    formData.append('ratio', videoRatio); // 传递视频比例
+    formData.append('imageUrl', productImageUrl); // parameter name expected by the API
+    formData.append('ratio', videoRatio); // video ratio
     
-    // 将文案转为 JSON（包含每段的prompt），API 期望的参数名是 segments
+    // Serialise scripts (with prompts) as JSON; the API expects `segments`
     const segmentsForRequest = scripts.map(s => ({
       id: s.id,
       script: s.script,
-      prompt: s.prompt || `${productName}产品展示，专业拍摄`
+      prompt: s.prompt || `${productName} product showcase, professional photography`
     }));
     formData.append('segments', JSON.stringify(segmentsForRequest));
     
-    // generate-video 是 SSE 流式接口，使用fetch处理流式响应
-    console.log(`[Tool] 调用generate-video API`);
+    // generate-video streams SSE; use fetch for the stream
+    console.log(`[Tool] calling generate-video API`);
     
     const fetchResponse = await fetch(`${BASE_URL}/api/generate-video`, {
       method: 'POST',
@@ -437,13 +437,13 @@ export async function* generateVideoSegmentsStream(
     });
     
     if (!fetchResponse.ok) {
-      throw new Error(`generate-video API请求失败: ${fetchResponse.status} ${fetchResponse.statusText}`);
+      throw new Error(`generate-video API request failed: ${fetchResponse.status} ${fetchResponse.statusText}`);
     }
     
-    // 使用ReadableStream处理SSE响应
+    // Read the SSE response as a ReadableStream
     const reader = fetchResponse.body?.getReader();
     if (!reader) {
-      throw new Error('无法获取响应流');
+      throw new Error('Could not read the response stream');
     }
     
     const decoder = new TextDecoder();
@@ -460,14 +460,14 @@ export async function* generateVideoSegmentsStream(
     }> = [];
     const sessionId = Date.now().toString();
     
-    // 逐行解析SSE事件
+    // Parse SSE events line by line
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
       
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split('\n');
-      buffer = lines.pop() || ''; // 保留最后一行（可能不完整）
+      buffer = lines.pop() || ''; // keep the (possibly partial) last line
       
       for (const line of lines) {
         if (line.startsWith('data: ')) {
@@ -476,7 +476,7 @@ export async function* generateVideoSegmentsStream(
           
           try {
             const data = JSON.parse(dataStr);
-            console.log(`[Tool] 解析事件: type=${data.type}`);
+            console.log(`[Tool] event: type=${data.type}`);
             
             if (data.type === 'segment_video' || data.type === 'segment_complete' || data.type === 'segment') {
               const segmentId = data.content?.segmentId || data.content?.id || data.segmentId;
@@ -484,10 +484,10 @@ export async function* generateVideoSegmentsStream(
               const duration = data.content?.duration || data.duration;
               const scriptContent = data.content?.script || '';
               
-              console.log(`[Tool] 解析视频片段: segmentId=${segmentId}, videoUrl=${redactUrl(videoUrl)}`);
+              console.log(`[Tool] segment: segmentId=${segmentId}, videoUrl=${redactUrl(videoUrl)}`);
               
               if (segmentId && videoUrl) {
-                // 下载视频到本地（优先转存到对象存储）
+                // Download a video (preferring object storage)
                 const videoFilename = `segment_${segmentId}_${Date.now()}.mp4`;
                 const { signedUrl } = await downloadVideoToLocal(
                   videoUrl, 
@@ -496,7 +496,7 @@ export async function* generateVideoSegmentsStream(
                   3
                 );
                 
-                console.log(`[Tool] 视频 ${segmentId} 下载完成: signedUrl=${redactUrl(signedUrl)}`);
+                console.log(`[Tool] video ${segmentId} downloaded: signedUrl=${redactUrl(signedUrl)}`);
                 
                 const segment = {
                   id: segmentId,
@@ -508,37 +508,37 @@ export async function* generateVideoSegmentsStream(
                 
                 segments.push(segment);
                 
-                // 实时yield segment_video事件
-                console.log(`[Tool] yield segment_video事件: id=${segmentId}`);
+                // Yield a segment_video event live
+                console.log(`[Tool] yield segment_video: id=${segmentId}`);
                 yield { type: 'segment_video', content: segment };
               }
             } else if (data.type === 'error') {
-              console.error(`[Tool] generate-video错误: ${data.content?.message || data.message}`);
+              console.error(`[Tool] generate-video error: ${data.content?.message || data.message}`);
             } else if (data.type === 'complete') {
-              console.log(`[Tool] generate-video完成事件`);
+              console.log(`[Tool] generate-video done event`);
             }
           } catch (parseError) {
-            console.error(`[Tool] JSON解析错误: ${safeLogError(parseError)}`);
+            console.error(`[Tool] JSON parse error: ${safeLogError(parseError)}`);
           }
         }
       }
     }
     
-    console.log(`[Tool] 视频片段解析完成，共 ${segments.length} 个片段`);
+    console.log(`[Tool] parsed ${segments.length} segments`);
     
-    // 按ID排序片段
+    // Sort segments by ID
     segments.sort((a, b) => a.id - b.id);
     
-    // 检查是否有有效的视频URL
+    // Check for valid video URLs
     const hasValidVideos = segments.some(s => s.videoUrl && s.videoUrl.length > 0);
     
     if (!hasValidVideos) {
-      console.error('[Tool] 视频片段生成失败: 没有有效的视频URL');
+      console.error('[Tool] segment generation failed: no valid video URL');
       yield { 
         type: 'result', 
         data: {
           success: false,
-          message: '视频片段生成失败，视频服务可能暂时不可用，请稍后重试',
+          message: 'Video segment generation failed; the video service may be temporarily unavailable, please retry later',
           data: { 
             segments: scripts.map(s => ({
               id: s.id,
@@ -549,23 +549,23 @@ export async function* generateVideoSegmentsStream(
             sessionId,
             currentStage: "script_generated"
           },
-          error: '视频生成服务未返回有效视频URL'
+          error: 'The video service returned no valid video URL'
         }
       };
       return;
     }
     
-    // 输出调试日志
+    // Debug logging
     segments.forEach((s, i) => {
-      console.log(`[Tool] 片段 ${i + 1}: id=${s.id}, videoUrl=${redactUrl(s.videoUrl)}`);
+      console.log(`[Tool] segment ${i + 1}: id=${s.id}, videoUrl=${redactUrl(s.videoUrl)}`);
     });
     
-    // yield最终结果
+    // Yield the final result
     yield { 
       type: 'result', 
       data: {
         success: true,
-        message: `视频片段生成完成，共 ${segments.length} 个`,
+        message: `Generated ${segments.length} video segments`,
         data: { 
           segments,
           sessionId,
@@ -575,12 +575,12 @@ export async function* generateVideoSegmentsStream(
     };
     
   } catch (error) {
-    console.error('[Tool] generate-video 失败:', safeLogError(error));
+    console.error('[Tool] generate-video failed:', safeLogError(error));
     yield { 
       type: 'result', 
       data: {
         success: false,
-        message: '视频片段生成失败，稍后可重试',
+        message: 'Video segment generation failed; you can retry later',
         data: { 
           segments: scripts.map(s => ({
             id: s.id,
@@ -589,21 +589,21 @@ export async function* generateVideoSegmentsStream(
             duration: 4
           }))
         },
-        error: error instanceof Error ? error.message : '未知错误'
+        error: error instanceof Error ? error.message : 'Unknown error'
       }
     };
   }
 }
 
 /**
- * 3. 生成视频片段（兼容旧版本，保持回调接口）
- * 调用 /api/generate-video (SSE 流式)
- * 使用每段的画面Prompt生成对应视频
- * @param scripts 文案列表
- * @param productImageUrl 商品图片URL
- * @param productName 商品名称
- * @param customHeaders 自定义请求头
- * @param onSegmentComplete 单个片段完成时的回调（用于实时推送）
+ * 3. Generate video segments (legacy callback interface)
+ * Calls /api/generate-video (SSE stream)
+ * Each scene's visual prompt drives its video
+ * @param scripts script list
+ * @param productImageUrl product image URL
+ * @param productName product name
+ * @param customHeaders custom request headers
+ * @param onSegmentComplete callback per completed segment (live push)
  */
 export async function generateVideoSegments(
   scripts: Array<{ id: number; script: string; prompt?: string }>,
@@ -612,23 +612,23 @@ export async function generateVideoSegments(
   customHeaders?: Record<string, string>,
   onSegmentComplete?: (segment: { id: number; videoUrl: string; audioUrl?: string; duration?: number; localVideoPath?: string; script: string }) => void
 ): Promise<ToolResult> {
-  console.log('[Tool] 调用 /api/generate-video，每段使用对应Prompt');
+  console.log('[Tool] calling /api/generate-video with a prompt per scene');
   
   try {
     const formData = new FormData();
     formData.append('productName', productName);
-    formData.append('imageUrl', productImageUrl); // API 期望的参数名
+    formData.append('imageUrl', productImageUrl); // parameter name expected by the API
     
-    // 将文案转为 JSON（包含每段的prompt），API 期望的参数名是 segments
+    // Serialise scripts (with prompts) as JSON; the API expects `segments`
     const segmentsForRequest = scripts.map(s => ({
       id: s.id,
       script: s.script,
-      prompt: s.prompt || `${productName}产品展示，专业拍摄`
+      prompt: s.prompt || `${productName} product showcase, professional photography`
     }));
     formData.append('segments', JSON.stringify(segmentsForRequest));
     
-    // generate-video 是 SSE 流式接口，使用fetch处理流式响应
-    console.log(`[Tool] 调用generate-video API，scripts数量=${scripts.length}`);
+    // generate-video streams SSE; use fetch for the stream
+    console.log(`[Tool] calling generate-video API, scripts=${scripts.length}`);
     
     const fetchResponse = await fetch(`${BASE_URL}/api/generate-video`, {
       method: 'POST',
@@ -637,13 +637,13 @@ export async function generateVideoSegments(
     });
     
     if (!fetchResponse.ok) {
-      throw new Error(`generate-video API请求失败: ${fetchResponse.status} ${fetchResponse.statusText}`);
+      throw new Error(`generate-video API request failed: ${fetchResponse.status} ${fetchResponse.statusText}`);
     }
     
-    // 使用ReadableStream处理SSE响应
+    // Read the SSE response as a ReadableStream
     const reader = fetchResponse.body?.getReader();
     if (!reader) {
-      throw new Error('无法获取响应流');
+      throw new Error('Could not read the response stream');
     }
     
     const decoder = new TextDecoder();
@@ -660,14 +660,14 @@ export async function generateVideoSegments(
     }> = [];
     const sessionId = Date.now().toString();
     
-    // 逐行解析SSE事件
+    // Parse SSE events line by line
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
       
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split('\n');
-      buffer = lines.pop() || ''; // 保留最后一行（可能不完整）
+      buffer = lines.pop() || ''; // keep the (possibly partial) last line
       
       for (const line of lines) {
         if (line.startsWith('data: ')) {
@@ -676,7 +676,7 @@ export async function generateVideoSegments(
           
           try {
             const data = JSON.parse(dataStr);
-            console.log(`[Tool] 解析视频片段事件: type=${data.type}`);
+            console.log(`[Tool] segment event: type=${data.type}`);
             
             if (data.type === 'segment_video' || data.type === 'segment_complete' || data.type === 'segment') {
               const segmentId = data.content?.segmentId || data.content?.id || data.segmentId;
@@ -684,10 +684,10 @@ export async function generateVideoSegments(
               const duration = data.content?.duration || data.duration;
               const scriptContent = data.content?.script || '';
               
-              console.log(`[Tool] 解析视频片段事件: segmentId=${segmentId}, videoUrl=${redactUrl(videoUrl)}, duration=${duration}`);
+              console.log(`[Tool] segment event: segmentId=${segmentId}, videoUrl=${redactUrl(videoUrl)}, duration=${duration}`);
               
               if (segmentId && videoUrl) {
-                // 下载视频到本地（优先转存到对象存储）
+                // Download a video (preferring object storage)
                 const videoFilename = `segment_${segmentId}_${Date.now()}.mp4`;
                 const { signedUrl } = await downloadVideoToLocal(
                   videoUrl, 
@@ -696,7 +696,7 @@ export async function generateVideoSegments(
                   3
                 );
                 
-                console.log(`[Tool] 视频片段 ${segmentId} 下载结果: signedUrl=${redactUrl(signedUrl)}`);
+                console.log(`[Tool] segment ${segmentId} download result: signedUrl=${redactUrl(signedUrl)}`);
                 
                 const segment = {
                   id: segmentId,
@@ -708,37 +708,37 @@ export async function generateVideoSegments(
                 
                 segments.push(segment);
                 
-                // 回调通知单个片段完成
+                // Notify the callback that a segment completed
                 if (onSegmentComplete) {
-                  console.log(`[Tool] 回调通知片段 ${segmentId} 完成`);
+                  console.log(`[Tool] callback: segment ${segmentId} complete`);
                   onSegmentComplete(segment);
                 }
               }
             } else if (data.type === 'error') {
-              console.error(`[Tool] generate-video错误: ${data.content?.message || data.message}`);
+              console.error(`[Tool] generate-video error: ${data.content?.message || data.message}`);
             } else if (data.type === 'complete') {
-              console.log(`[Tool] generate-video完成事件`);
+              console.log(`[Tool] generate-video done event`);
             }
           } catch (parseError) {
-            console.error(`[Tool] JSON解析错误: ${safeLogError(parseError)}`);
+            console.error(`[Tool] JSON parse error: ${safeLogError(parseError)}`);
           }
         }
       }
     }
     
-    console.log(`[Tool] 视频片段解析完成，共 ${segments.length} 个片段`);
+    console.log(`[Tool] parsed ${segments.length} segments`);
     
-    // 按ID排序片段
+    // Sort segments by ID
     segments.sort((a, b) => a.id - b.id);
     
-    // 检查是否有有效的视频URL
+    // Check for valid video URLs
     const hasValidVideos = segments.some(s => s.videoUrl && s.videoUrl.length > 0);
     
     if (!hasValidVideos) {
-      console.error('[Tool] 视频片段生成失败: 没有有效的视频URL');
+      console.error('[Tool] segment generation failed: no valid video URL');
       return {
         success: false,
-        message: '视频片段生成失败，视频服务可能暂时不可用，请稍后重试',
+        message: 'Video segment generation failed; the video service may be temporarily unavailable, please retry later',
         data: { 
           segments: scripts.map(s => ({
             id: s.id,
@@ -749,18 +749,18 @@ export async function generateVideoSegments(
           sessionId,
           currentStage: "script_generated"
         },
-        error: '视频生成服务未返回有效视频URL'
+        error: 'The video service returned no valid video URL'
       };
     }
     
-    // 输出调试日志
+    // Debug logging
     segments.forEach((s, i) => {
-      console.log(`[Tool] 片段 ${i + 1}: id=${s.id}, videoUrl=${redactUrl(s.videoUrl)}, localPath=[path]`);
+      console.log(`[Tool] segment ${i + 1}: id=${s.id}, videoUrl=${redactUrl(s.videoUrl)}, localPath=[path]`);
     });
     
     return {
       success: true,
-      message: `视频片段生成完成，共 ${segments.length} 个（已下载到本地）`,
+      message: `Generated ${segments.length} video segments (downloaded locally)`,
       data: { 
         segments,
         sessionId,
@@ -768,8 +768,8 @@ export async function generateVideoSegments(
       }
     };
   } catch (error) {
-    console.error('[Tool] generate-video 失败:', safeLogError(error));
-    // 返回脚本信息（稍后可重试）
+    console.error('[Tool] generate-video failed:', safeLogError(error));
+    // Return the scripts so the user can retry later
     const segments = scripts.map(s => ({
       id: s.id,
       script: s.script,
@@ -779,16 +779,16 @@ export async function generateVideoSegments(
     }));
     return {
       success: false,
-      message: '视频片段生成失败，稍后可重试',
+      message: 'Video segment generation failed; you can retry later',
       data: { segments },
-      error: error instanceof Error ? error.message : '未知错误'
+      error: error instanceof Error ? error.message : 'Unknown error'
     };
   }
 }
 
 /**
- * 4. 合成最终视频
- * 直接使用 FFmpeg 合成（不调用 compose API）
+ * 4. Compose the final video
+ * Uses FFmpeg directly (no compose API)
  */
 export async function composeFinalVideo(
   segments: Array<{ id: number; script: string; videoUrl?: string; audioUrl?: string; localVideoPath?: string; localAudioPath?: string }>,
@@ -796,14 +796,14 @@ export async function composeFinalVideo(
   options?: { bgmUrl?: string; embedSubtitle?: boolean; sessionId?: string },
   customHeaders?: Record<string, string>
 ): Promise<ToolResult> {
-  console.log('[Tool] composeFinalVideo: 开始合成最终视频');
-  console.log('[Tool] 传入的 segments 数量:', segments?.length || 0);
+  console.log('[Tool] composeFinalVideo: starting composition');
+  console.log('[Tool] segments received:', segments?.length || 0);
   
   if (!segments || segments.length === 0) {
     return {
       success: false,
-      message: '没有可合成的视频片段',
-      error: 'segments 为空'
+      message: 'No video segments to compose',
+      error: 'segments is empty'
     };
   }
   
@@ -811,64 +811,64 @@ export async function composeFinalVideo(
   const tmpDir = `/tmp/compose_${sessionId}`;
   
   try {
-    // 创建临时目录
+    // Create a temp directory
     if (!fs.existsSync(tmpDir)) {
       fs.mkdirSync(tmpDir, { recursive: true });
     }
     
-    console.log(`[Tool] 创建临时目录: [path]`);
+    console.log(`[Tool] temp directory created: [path]`);
     
-    // 按 ID 排序确保合成顺序正确
+    // Sort by ID so composition order is correct
     const sortedSegments = [...segments].sort((a, b) => (a.id || 0) - (b.id || 0));
-    console.log(`[Tool] 片段排序后的ID顺序: ${sortedSegments.map(s => s.id).join(', ')}`);
+    console.log(`[Tool] sorted segment IDs: ${sortedSegments.map(s => s.id).join(', ')}`);
     
-    // Step 1: 下载所有视频和音频文件到本地
+    // Step 1: download every video and audio file
     const localSegments: Array<{ videoPath: string; audioPath: string; script: string; duration: number }> = [];
     
     for (const segment of sortedSegments) {
       const segId = segment.id;
-      console.log(`[Tool] 处理片段 ${segId}...`);
+      console.log(`[Tool] processing segment ${segId}...`);
       
-      // 下载视频
+      // Download the video
       const videoPath = path.join(tmpDir, `video_${segId}.mp4`);
       if (segment.videoUrl) {
-        console.log(`[Tool] 下载视频 ${segId}: ${redactUrl(segment.videoUrl)}`);
+        console.log(`[Tool] downloading video ${segId}: ${redactUrl(segment.videoUrl)}`);
         const videoResponse = await axios.get(segment.videoUrl, { 
           responseType: 'arraybuffer',
           timeout: 60000,
           headers: customHeaders
         });
         fs.writeFileSync(videoPath, videoResponse.data);
-        console.log(`[Tool] 视频 ${segId} 下载完成，大小: ${fs.statSync(videoPath).size} bytes`);
+        console.log(`[Tool] video ${segId} downloaded, size: ${fs.statSync(videoPath).size} bytes`);
       } else {
-        console.error(`[Tool] 片段 ${segId} 没有 videoUrl`);
+        console.error(`[Tool] segment ${segId} has no videoUrl`);
         continue;
       }
       
-      // 下载音频（如果有）
+      // Download the audio when present
       const audioPath = path.join(tmpDir, `audio_${segId}.mp3`);
       if (segment.audioUrl) {
-        console.log(`[Tool] 下载音频 ${segId}: ${redactUrl(segment.audioUrl)}`);
+        console.log(`[Tool] downloading audio ${segId}: ${redactUrl(segment.audioUrl)}`);
         const audioResponse = await axios.get(segment.audioUrl, { 
           responseType: 'arraybuffer',
           timeout: 60000,
           headers: customHeaders
         });
         fs.writeFileSync(audioPath, audioResponse.data);
-        console.log(`[Tool] 音频 ${segId} 下载完成，大小: ${fs.statSync(audioPath).size} bytes`);
+        console.log(`[Tool] audio ${segId} downloaded, size: ${fs.statSync(audioPath).size} bytes`);
       } else {
-        console.log(`[Tool] 片段 ${segId} 没有 audioUrl，使用视频自带音频`);
-        // 如果没有单独的音频，使用视频自带的音频
+        console.log(`[Tool] segment ${segId} has no audioUrl; using the video's own audio`);
+        // Without separate audio, use the video's audio track
         fs.copyFileSync(videoPath, audioPath.replace('.mp3', '_from_video.mp4'));
       }
       
-      // 获取音频时长
+      // Read the audio duration
       let duration = 0;
       try {
         const durationCmd = `ffprobe -v quiet -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${audioPath}"`;
         duration = parseFloat(execSync(durationCmd, { encoding: 'utf-8', timeout: 5000 }).trim()) || 0;
       } catch (e) {
-        console.log(`[Tool] 无法获取音频时长，使用默认值 5秒`);
+        console.log(`[Tool] could not read audio duration, defaulting to 5s`);
         duration = 5;
       }
       
@@ -883,113 +883,113 @@ export async function composeFinalVideo(
     if (localSegments.length === 0) {
       return {
         success: false,
-        message: '没有有效的视频片段可合成',
-        error: '所有片段都缺少视频URL'
+        message: 'No valid video segments to compose',
+        error: 'Every segment is missing a video URL'
       };
     }
     
-    console.log(`[Tool] 共 ${localSegments.length} 个有效片段准备合成`);
+    console.log(`[Tool] ${localSegments.length} valid segments ready for composition`);
     
-    // Step 2: 合并每个视频的音频（如果有单独音频）
+    // Step 2: merge separate audio into each video
     const mergedVideos: string[] = [];
     
     for (const seg of localSegments) {
       const mergedPath = seg.videoPath.replace('.mp4', '_merged.mp4');
       
-      // 检查视频是否有音频轨道
+      // Check whether the video has an audio track
       const probeCmd = `ffprobe -v quiet -show_streams -select_streams a "${seg.videoPath}"`;
       const probeOutput = execSync(probeCmd, { encoding: 'utf-8', timeout: 5000 });
       const hasAudioInVideo = probeOutput.includes('codec_type=audio');
       
       if (hasAudioInVideo) {
-        // 视频已有音频，直接使用
-        console.log(`[Tool] 视频已有音频轨道，直接使用`);
+        // The video already has audio
+        console.log(`[Tool] video already has an audio track`);
         fs.copyFileSync(seg.videoPath, mergedPath);
       } else if (fs.existsSync(seg.audioPath) && fs.statSync(seg.audioPath).size > 0) {
-        // 合并音频和视频
-        console.log(`[Tool] FFmpeg合并音视频...`);
+        // Merge audio and video
+        console.log(`[Tool] FFmpeg merging audio and video...`);
         const mergeCmd = `ffmpeg -y -i "${seg.videoPath}" -i "${seg.audioPath}" -c:v copy -c:a aac -shortest "${mergedPath}"`;
         execSync(mergeCmd, { stdio: 'pipe', timeout: 30000 });
       } else {
-        // 无音频，直接使用视频
-        console.log(`[Tool] 无音频文件，使用原视频`);
+        // No audio: use the video as-is
+        console.log(`[Tool] no audio file, using the original video`);
         fs.copyFileSync(seg.videoPath, mergedPath);
       }
       
       mergedVideos.push(mergedPath);
     }
     
-    // Step 3: 直接拼接视频（分段视频已有字幕，无需再添加）
+    // Step 3: concatenate the videos (segments already carry subtitles)
     const listPath = path.join(tmpDir, 'filelist.txt');
     const listContent = mergedVideos.map(v => `file '${v}'`).join('\n');
     fs.writeFileSync(listPath, listContent, 'utf-8');
     
-    // 直接使用拼接后的视频作为最终视频（分段视频已有字幕）
+    // The concatenated video is the final video (segments already carry subtitles)
     const finalPath = path.join(tmpDir, `final_${Date.now()}.mp4`);
-    console.log(`[Tool] FFmpeg拼接视频（分段已有字幕，无需再添加）...`);
+    console.log(`[Tool] FFmpeg concatenating videos (subtitles already embedded)...`);
     const concatCmd = `ffmpeg -y -f concat -safe 0 -i "${listPath}" -c copy "${finalPath}"`;
     execSync(concatCmd, { stdio: 'pipe', timeout: 60000 });
-    console.log(`[Tool] 视频拼接完成: [path]`);
+    console.log(`[Tool] concatenation complete: [path]`);
     
-    // 获取最终视频时长
+    // Read the final duration
     const durationCmd = `ffprobe -v quiet -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${finalPath}"`;
     const finalDuration = parseFloat(execSync(durationCmd, { encoding: 'utf-8', timeout: 5000 }).trim()) || 0;
-    console.log(`[Tool] 最终视频时长: ${finalDuration}秒，文件大小: ${fs.statSync(finalPath).size} bytes`);
+    console.log(`[Tool] final duration: ${finalDuration}s, size: ${fs.statSync(finalPath).size} bytes`);
     
-    // Step 6: 上传到对象存储
-    console.log(`[Tool] 上传最终视频到对象存储...`);
+    // Step 6: upload to object storage
+    console.log(`[Tool] uploading the final video to object storage...`);
     const filename = `${productName.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_')}_final.mp4`;
     const key = `final/${sessionId}/${filename}`;
     
-    // 读取文件内容并上传
+    // Read and upload the file
     const fileContent = fs.readFileSync(finalPath);
     const uploadResult = await uploadLocalFile(fileContent, filename, 'video/mp4');
     const signedVideoUrl = uploadResult.signedUrl;
     
-    console.log(`[Tool] 最终视频上传完成: ${redactUrl(signedVideoUrl)}`);
+    console.log(`[Tool] final video uploaded: ${redactUrl(signedVideoUrl)}`);
     
-    // 清理临时文件
+    // Clean up temp files
     try {
       fs.rmSync(tmpDir, { recursive: true, force: true });
-      console.log(`[Tool] 临时目录清理完成`);
+      console.log(`[Tool] temp directory removed`);
     } catch (e) {
-      console.log(`[Tool] 临时目录清理失败（可忽略）`);
+      console.log(`[Tool] temp directory cleanup failed (ignored)`);
     }
     
     return {
       success: true,
-      message: `最终视频合成完成！时长 ${finalDuration}秒，已上传到对象存储（分段视频已有字幕）`,
+      message: `Final video ready! Duration ${finalDuration}s, uploaded to object storage (subtitles embedded)`,
       data: {
         finalVideoUrl: signedVideoUrl,
         finalVideoLocalPath: finalPath,
-        // 字幕已在分段视频中嵌入，无需额外字幕文件
+        // Subtitles are embedded in the segments; no separate subtitle file
         duration: finalDuration,
         currentStage: "done"
       }
     };
   } catch (error) {
-    console.error('[Tool] composeFinalVideo 失败:', safeLogError(error));
+    console.error('[Tool] composeFinalVideo failed:', safeLogError(error));
     
-    // 清理临时文件
+    // Clean up temp files
     try {
       if (fs.existsSync(tmpDir)) {
         fs.rmSync(tmpDir, { recursive: true, force: true });
       }
     } catch (e) {
-      // 忽略清理错误
+      // Ignore cleanup errors
     }
     
     return {
       success: false,
-      message: '视频合成失败',
-      error: error instanceof Error ? error.message : '未知错误'
+      message: 'Video composition failed',
+      error: error instanceof Error ? error.message : 'Unknown error'
     };
   }
 }
 
 /**
- * 5. 修改文案
- * 调用 /api/generate-script（重新生成指定文案）
+ * 5. Edit the script
+ * Calls /api/generate-script (regenerates the given scene)
  */
 export async function modifyScript(
   scriptId: number,
@@ -998,12 +998,12 @@ export async function modifyScript(
   features: string[],
   customHeaders?: Record<string, string>
 ): Promise<ToolResult> {
-  console.log('[Tool] 修改文案', scriptId);
+  console.log('[Tool] editing script', scriptId);
   
-  // 直接返回修改后的文案
+  // Return the edited script
   return {
     success: true,
-    message: `文案 ${scriptId} 已修改`,
+    message: `Script ${scriptId} updated`,
     data: {
       modifiedScript: {
         id: scriptId,
@@ -1014,8 +1014,8 @@ export async function modifyScript(
 }
 
 /**
- * 6. 重新生成视频片段
- * 调用 /api/agent/regenerate
+ * 6. Regenerate a video segment
+ * Calls /api/agent/regenerate
  */
 export async function regenerateSegment(
   segmentId: number,
@@ -1026,8 +1026,8 @@ export async function regenerateSegment(
   folderPath?: string,
   customHeaders?: Record<string, string>
 ): Promise<ToolResult> {
-  console.log('[Tool] 调用 /api/agent/regenerate');
-  console.log('[Tool] 使用画面Prompt:', prompt);
+  console.log('[Tool] calling /api/agent/regenerate');
+  console.log('[Tool] visual prompt:', prompt);
   
   try {
     const response = await axios.post(
@@ -1045,7 +1045,7 @@ export async function regenerateSegment(
           ...customHeaders,
           'Content-Type': 'application/json'
         },
-        timeout: 300000, // 5 分钟超时
+        timeout: 300000, // 5 minute timeout
         responseType: 'text'
       }
     );
@@ -1053,30 +1053,30 @@ export async function regenerateSegment(
     const segment = parseRegenerationResult(response.data, segmentId, script);
     return {
       success: true,
-      message: `片段 ${segmentId} 重新生成完成`,
+      message: `Segment ${segmentId} regenerated`,
       data: {
         segment
       }
     };
   } catch (error) {
-    console.error('[Tool] regenerate 失败:', safeLogError(error));
+    console.error('[Tool] regenerate failed:', safeLogError(error));
     return {
       success: false,
-      message: `片段 ${segmentId} 重新生成失败`,
-      error: error instanceof Error ? error.message : '未知错误'
+      message: `Segment ${segmentId} regeneration failed`,
+      error: error instanceof Error ? error.message : 'Unknown error'
     };
   }
 }
 
 /**
- * 7. 上传图片（仅上传，不识别）
- * 调用 /api/upload-image
+ * 7. Upload an image (upload only, no recognition)
+ * Calls /api/upload-image
  */
 export async function uploadImage(
   imageFile: File,
   customHeaders?: Record<string, string>
 ): Promise<ToolResult> {
-  console.log('[Tool] 调用 /api/upload-image');
+  console.log('[Tool] calling /api/upload-image');
   
   try {
     const formData = new FormData();
@@ -1096,24 +1096,24 @@ export async function uploadImage(
     const result = response.data;
     return {
       success: true,
-      message: '图片上传成功',
+      message: 'Image uploaded',
       data: {
         imageUrl: result.imageUrl,
         fileName: result.fileName
       }
     };
   } catch (error) {
-    console.error('[Tool] upload-image 失败:', safeLogError(error));
+    console.error('[Tool] upload-image failed:', safeLogError(error));
     return {
       success: false,
-      message: '图片上传失败',
-      error: error instanceof Error ? error.message : '未知错误'
+      message: 'Image upload failed',
+      error: error instanceof Error ? error.message : 'Unknown error'
     };
   }
 }
 
 /**
- * 工具名称映射
+ * Tool name map
  */
 export const TOOL_NAMES = {
   UPLOAD_AND_IDENTIFY: 'uploadAndIdentifyProduct',

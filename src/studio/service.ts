@@ -32,7 +32,7 @@ export const schemas = {
         .min(1)
         .max(100)
         .default("Your everyday essential"),
-      language: z.enum(["english", "mandarin", "cantonese"]).default("english"),
+      language: z.literal("english").default("english"),
       ratio: z.enum(["16:9", "9:16", "1:1"]).default("16:9"),
     })
     .strict(),
