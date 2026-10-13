@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title">
+  <title id="title">vidio icon</title>
+  <defs>
+    <linearGradient id="purple" x2="1" y2="1">
+      <stop stop-color="#B999F3"/>
+      <stop offset="1" stop-color="#6E42B5"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="32" fill="url(#purple)"/>
+  <path d="M30 39H46L64 79L82 39H98L72 96H56Z" fill="#FFFFFF"/>
+  <circle cx="92" cy="25" r="5" fill="#ECE6F7"/>
+</svg>
