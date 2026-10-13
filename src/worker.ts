@@ -139,7 +139,10 @@ async function main() {
   for (const signal of ["SIGTERM", "SIGINT"])
     process.once(signal, () => { void stop().then(() => database().end()).then(() => process.exit(0)); });
 }
-if (process.argv[1]?.endsWith("/worker.ts")) main().catch(() => {
+export function isWorkerEntryPoint(entryPath: string | undefined) {
+  return entryPath?.replaceAll("\\", "/").endsWith("/worker.ts") ?? false;
+}
+if (isWorkerEntryPoint(process.argv[1])) main().catch(() => {
   console.error("Worker startup failed; check mode, migrations and database.");
   process.exit(1);
 });

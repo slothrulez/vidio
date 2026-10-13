@@ -21,6 +21,7 @@ import { composeOwnedSegments } from "../src/studio/composition";
 import { PrivateObjectStore,objectKey } from "../src/studio/object-store";
 import { StudioError } from "../src/studio/types";
 import { POST as start } from "../src/app/api/studio/jobs/route";
+import { POST as createConsent } from "../src/app/api/studio/consent/route";
 import { GET as status } from "../src/app/api/studio/jobs/[jobId]/route";
 import { POST as retry } from "../src/app/api/studio/jobs/[jobId]/retry/route";
 import { PUT as scripts } from "../src/app/api/studio/projects/[projectId]/scripts/route";
@@ -95,12 +96,22 @@ test("authenticated production API returns an immediate job ID and resumes known
   assert.equal(set.status,200);
   project=await getProject(owner,project.id);
   const input={projectId:project.id,revision:project.revision,confirmed:true,idempotencyKey:randomUUID()};
-  const response=await start(request("/api/studio/jobs",{operation:"generate_segments",input}));
+  assert.equal((await start(request("/api/studio/jobs",{operation:"generate_segments",input}))).status,409);
+  const approval=await createConsent(request("/api/studio/consent",{
+    projectId:project.id,
+    revision:project.revision,
+    operation:"start_video_job",
+    idempotencyKey:input.idempotencyKey,
+  }));
+  assert.equal(approval.status,200);
+  const consent=(await approval.json() as {consent:{token:string}}).consent.token;
+  const response=await start(request("/api/studio/jobs",{operation:"generate_segments",input,consentToken:consent}));
   assert.equal(response.status,202);
   const {jobId}=await response.json() as {jobId:string};
   assert.match(jobId,/^[\da-f-]{36}$/);
   assert.equal((await getJob(owner,jobId)).lifecycleStatus,"queued");
-  assert.equal((await start(request("/api/studio/jobs",{operation:"generate_segments",input}))).status,202);
+  assert.equal((await start(request("/api/studio/jobs",{operation:"generate_segments",input,consentToken:consent}))).status,202);
+  assert.equal((await start(request("/api/studio/jobs",{operation:"generate_segments",input:{...input,idempotencyKey:randomUUID()},consentToken:consent}))).status,409);
   assert.equal((await status(request("/jobs"),params(jobId))).status,200);
   assert.equal((await status(request("/jobs",undefined,otherToken),params(jobId))).status,404);
   assert.equal((await retry(request("/retry",{},otherToken),params(jobId))).status,404);
@@ -339,6 +350,11 @@ test("production paid MCP tools require a server-issued single-use human approva
   assert.equal(set.status,200);
   project=await getProject(owner,project.id);
   const base={projectId:project.id,revision:project.revision,confirmed:true as const};
+  const restBypass=await tools(request("/api/studio/tools",{
+    name:"generate_segments",
+    arguments:{...base,idempotencyKey:randomUUID()},
+  },consentBearer));
+  assert.equal(restBypass.status,409);
   await assert.rejects(executeMcpTool(owner,"start_video_job",{...base,idempotencyKey:randomUUID()}),(error:unknown)=>error instanceof StudioError&&error.code==="CONSENT"&&error.status===409);
   await assert.rejects(executeMcpTool(owner,"grant_cost_consent",{projectId:project.id,revision:project.revision+1,operation:"start_video_job",idempotencyKey:randomUUID()}),(error:unknown)=>error instanceof StudioError&&error.code==="REVISION");
   const key=randomUUID();
