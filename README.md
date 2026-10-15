@@ -27,7 +27,7 @@ docker compose up -d --wait
 Create a **local, ignored** `.env.local` file. Generate the secret yourself; never commit or print its value:
 
 ```bash
-(umask 077; set -C; printf 'DATABASE_URL=postgresql://vidio:vidio_local@127.0.0.1:54329/vidio\nVIDIO_MODE=demo\nVIDIO_MCP_LOCAL_AUTH=true\nVIDIO_PUBLIC_ORIGIN=http://localhost:5000\nVIDIO_PREVIEW_SECRET=%s\n' "$(openssl rand -hex 32)" > .env.local)
+(umask 077; set -C; printf 'DATABASE_URL=postgresql://vidio:vidio_local@127.0.0.1:55432/vidio\nVIDIO_MODE=demo\nVIDIO_MCP_LOCAL_AUTH=true\nVIDIO_PUBLIC_ORIGIN=http://localhost:5000\nVIDIO_PREVIEW_SECRET=%s\n' "$(openssl rand -hex 32)" > .env.local)
 pnpm db:migrate
 pnpm build:widget
 pnpm exec next build
@@ -41,7 +41,7 @@ pnpm worker
 COZE_PROJECT_ENV=PROD pnpm start
 ```
 
-Open `http://localhost:5000/studio`. To run the protocol test, use `pnpm test:mcp` with both processes running. For the isolated database test, create a disposable `vidio_test` database and run `TEST_DATABASE_URL=postgresql://vidio:vidio_local@127.0.0.1:54329/vidio_test pnpm test:integration`. Unit tests require no database: `pnpm test:unit`. Both databases live in the Docker volume; `docker compose down` stops the container but does not delete the volume. Never point the disposable integration test at user data.
+Open `http://localhost:5000/studio`. To run the protocol test, use `pnpm test:mcp` with both processes running. For the isolated database test, create a disposable `vidio_test` database and run `TEST_DATABASE_URL=postgresql://vidio:vidio_local@127.0.0.1:55432/vidio_test pnpm test:integration`. Unit tests require no database: `pnpm test:unit`. Both databases live in the Docker volume; `docker compose down` stops the container but does not delete the volume. Never point the disposable integration test at user data.
 
 The demo uses signed, owner-bound browser sessions, bounded uploads, expiring media links, PostgreSQL and a separate worker. **MCP requires a bearer token; anonymous access and browser-cookie authentication are not supported on `/mcp`.** Demo media stays local; production mode instead uses private S3 and the resumable provider adapter described below. OAuth authorization-code/PKCE, browser sign-in, server-verified human cost consent, privacy/deletion policy, production provisioning and ChatGPT-host verification remain public-launch requirements. No paid calls run in demo mode.
 
