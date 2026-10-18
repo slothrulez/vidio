@@ -361,7 +361,7 @@ test("production paid MCP tools require a server-issued single-use human approva
   await assert.rejects(executeMcpTool(owner,"start_video_job",{...base,idempotencyKey:randomUUID(),consentToken:token}),(error:unknown)=>error instanceof StudioError&&error.code==="CONSENT");
   const used=await database().query("SELECT used_at,idempotency_key FROM vidio_cost_consents WHERE id=$1",[token]);
   assert.ok(used.rows[0].used_at);
-  assert.equal(used.rows[0].idempotency_key,key);
+  assert.equal(used.rows[0].idempotency_key,`${key}:ark`);
   await database().query("DELETE FROM vidio_projects WHERE owner_id=$1",[owner]);
 });
 

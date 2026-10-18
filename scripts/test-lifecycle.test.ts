@@ -1,4 +1,4 @@
-import { test, after, before } from "node:test";
+import { test, after, before, mock } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -12,6 +12,9 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { registerAsset,readAsset } from "../src/studio/assets";
 import { StudioError } from "../src/studio/types";
+import { videoFixture } from "./fixtures/video";
+import { WAN_SPACE_REVISION } from "../src/studio/wan-provider";
+import { executeMcpTool } from "../src/studio/mcp-contracts";
 
 const url = process.env.TEST_DATABASE_URL;
 if (!url || !new URL(url).pathname.endsWith("_test")) throw new Error("Use a disposable TEST_DATABASE_URL ending in _test");
@@ -39,6 +42,94 @@ async function fixture() {
   const job=await startJob(owner,"generate_segments",input);
   return {project,input,job};
 }
+async function aiFixture() {
+  const project=await createProject(owner,{name:"Wan lifecycle test",language:"english",ratio:"16:9"});
+  project.stage="scripted";
+  project.scripts=[{id:1,script:"Mock scene one",prompt:"Mock moving product"}];
+  await saveProject(owner,project);
+  return project;
+}
+test("Wan is operator opt-in, separate from paid admission, and static fallback is explicit",async()=>{
+  const project=await aiFixture();
+  const input={projectId:project.id,revision:0,confirmed:true,idempotencyKey:randomUUID(),generationMode:"wan" as const};
+  delete process.env.VIDIO_WAN_ENABLED;
+  await assert.rejects(()=>startJob(owner,"generate_segments",input),{code:"PROVIDER_CONFIGURATION"});
+  await assert.rejects(()=>startJob(owner,"generate_segments",{...input,generationMode:"ark"}),{code:"BUDGET"});
+  const job=await startJob(owner,"generate_segments",{...input,generationMode:"static"});
+  const spy=mock.method(globalThis,"fetch",async()=>{throw new Error("Static fallback must not contact a provider");});
+  try {
+    await runJob(job.id);
+    assert.equal((await getJob(owner,job.id)).lifecycleStatus,"completed");
+    assert.equal((await getProject(owner,project.id)).segments[0].generationMode,"static");
+    assert.equal(spy.mock.callCount(),0);
+  } finally { spy.mock.restore(); }
+});
+test("Wan worker checkpoints actual task IDs, validates silent generated media and stores owned provenance",async()=>{
+  const project=await aiFixture();
+  const signalEvent="b".repeat(32),base="https://naxyiudu228-wan22-ti2v-5b.hf.space";
+  const clip=await videoFixture("16:9",false);
+  let submissions=0;
+  process.env.VIDIO_WAN_ENABLED="true";
+  const spy=mock.method(globalThis,"fetch",async(url:unknown)=>{
+    if(String(url).includes("/api/spaces/")) return Response.json({runtime:{stage:"RUNNING",sha:WAN_SPACE_REVISION,hardware:{current:"zero-a10g"}}});
+    if(String(url).endsWith("/call/generate_video")) { submissions++; return Response.json({event_id:signalEvent}); }
+    if(String(url).endsWith(signalEvent)) return new Response(`event: generating\ndata: null\n\nevent: complete\ndata: [{"url":"${base}/gradio_api/file=/tmp/gradio/generated.mp4"}]\n\n`);
+    return new Response(clip,{headers:{"Content-Type":"video/mp4"}});
+  });
+  try {
+    const job=await startJob(owner,"generate_segments",{projectId:project.id,revision:0,confirmed:true,idempotencyKey:randomUUID(),generationMode:"wan"});
+    await runJob(job.id);
+    const state=await getJob(owner,job.id),next=await getProject(owner,project.id);
+    assert.equal(state.lifecycleStatus,"completed"); assert.equal(submissions,1);
+    assert.equal(state.segments?.[0].status,"completed"); assert.equal(next.segments[0].generationMode,"wan");
+    assert.match(next.segments[0].model!,/FastWan/);
+    assert.equal((await readAsset(owner,next.segments[0].assetId)).mime,"video/mp4");
+    const checkpoint=await database().query("SELECT provider_task_id FROM vidio_job_segments WHERE job_id=$1",[job.id]);
+    assert.equal(checkpoint.rows[0].provider_task_id,signalEvent);
+  } finally { spy.mock.restore(); delete process.env.VIDIO_WAN_ENABLED; }
+});
+test("free GPU quota failure remains visible, never switches modes, and permits explicit fallback",async()=>{
+  const project=await aiFixture();
+  let submissions=0;
+  process.env.VIDIO_WAN_ENABLED="true";
+  const spy=mock.method(globalThis,"fetch",async(url:unknown)=>{
+    if(String(url).includes("/api/spaces/")) return Response.json({runtime:{stage:"RUNNING",sha:WAN_SPACE_REVISION,hardware:{current:"zero-a10g"}}});
+    if(String(url).endsWith("/call/generate_video")) { submissions++; return Response.json({event_id:"c".repeat(32)}); }
+    return new Response('event: error\ndata: "GPU quota exceeded. Retry tomorrow."\n\n');
+  });
+  try {
+    const input={projectId:project.id,revision:0,confirmed:true,idempotencyKey:randomUUID(),generationMode:"wan" as const};
+    const job=await startJob(owner,"generate_segments",input);
+    await runJob(job.id);
+    const failed=await getJob(owner,job.id);
+    assert.equal(failed.lifecycleStatus,"failed"); assert.match(failed.error!,/GPU quota exceeded/);
+    assert.equal(failed.segments?.[0].status,"failed"); assert.equal(submissions,1);
+    assert.equal((await getProject(owner,project.id)).segments.length,0);
+    const fallback=await startJob(owner,"generate_segments",{...input,idempotencyKey:randomUUID(),generationMode:"static"});
+    await runJob(fallback.id);
+    assert.equal((await getProject(owner,project.id)).segments[0].generationMode,"static");
+    assert.equal(submissions,1);
+  } finally { spy.mock.restore(); delete process.env.VIDIO_WAN_ENABLED; }
+});
+test("a static approval cannot be reused to authorize AI image sharing",async()=>{
+  const project=await aiFixture(),key=randomUUID();
+  const grant=await executeMcpTool(owner,"grant_cost_consent",{projectId:project.id,revision:0,operation:"start_video_job",idempotencyKey:key,generationMode:"static"});
+  await assert.rejects(()=>executeMcpTool(owner,"start_video_job",{projectId:project.id,revision:0,idempotencyKey:key,confirmed:true,generationMode:"wan",consentToken:grant.structuredContent.consent!.token}),{code:"CONSENT"});
+});
+test("fade composition keeps the full timeline, captions and audio of owned scenes",async()=>{
+  const {project,job}=await fixture();
+  await runJob(job.id);
+  const next=await getProject(owner,project.id);
+  const compose=await startJob(owner,"compose_video",{projectId:next.id,revision:next.revision,confirmed:true,idempotencyKey:randomUUID(),segmentIds:[2,1],composition:{subtitles:true,backgroundMusic:"soft",transition:"fade"}});
+  await runJob(compose.id);
+  const result=await getProject(owner,next.id);
+  assert.equal((await getJob(owner,compose.id)).lifecycleStatus,"completed");
+  assert.ok(result.finalAssetId); assert.ok(result.captionAssetId);
+  assert.equal((await readAsset(owner,result.finalAssetId)).mime,"video/mp4");
+  const captions=(await readAsset(owner,result.captionAssetId)).buffer.toString();
+  assert.ok(captions.indexOf("Scene 2")<captions.indexOf("Scene 1"));
+  assert.match(captions,/00:00:04.000/);
+});
 test("jobs immediately expose persistent owned segments and idempotency",async()=>{
   const {job,input}=await fixture();
   const repeat=await startJob(owner,"generate_segments",input);

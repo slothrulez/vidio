@@ -27,7 +27,7 @@ export async function executeDemo(
   project: StudioProject,
   context?: ExecutionContext,
 ) {
-  requireDemoMode();
+  if (!(input.generationMode === "static" && ["generate_segments","regenerate_segment"].includes(operation))) requireDemoMode();
   const workspace = path.join(process.cwd(), ".vidio", "jobs", jobId, crypto.randomUUID());
   await mkdir(workspace, { recursive: true, mode: 0o700 });
   async function checkpoint(progress: number) {
@@ -65,7 +65,7 @@ export async function executeDemo(
     const label = path.join(workspace, "label.txt");
     await writeFile(
       label,
-      `DEMO • SAMPLE MEDIA\n${project.name.replace(/[\r\n\0]/g, " ")} • Scene ${id}`,
+      `STATIC FALLBACK - NOT AI\n${project.name.replace(/[\r\n\0]/g, " ")} - Scene ${id}`,
     );
     const [width, height] =
       project.ratio === "9:16"
@@ -113,6 +113,7 @@ export async function executeDemo(
       ),
       duration: 2,
       script: script.script,
+      generationMode: "static" as const,
     };
   }
   try {

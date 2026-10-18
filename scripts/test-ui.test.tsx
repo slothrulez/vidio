@@ -84,7 +84,7 @@ test("explicit review and a separate confirmation are required before generation
     { api, calls } = transport(project);
   render(<EmbeddedStudio transport={api} incoming={response(project)} />);
   const generate = await screen.findByRole("button", {
-    name: "Generate labelled sample scenes",
+    name: "Generate AI scenes",
   });
   assert.equal((generate as HTMLButtonElement).disabled, true);
   fireEvent.click(
@@ -108,6 +108,7 @@ test("explicit review and a separate confirmation are required before generation
   assert.ok(grant >= 0 && grant < calls.indexOf(started), "approval is requested before the paid tool");
   assert.equal(calls[grant].args.operation, "start_video_job");
   assert.equal(started.args.confirmed, true);
+  assert.equal(started.args.generationMode, "wan");
   assert.equal(started.args.revision, 3);
   assert.equal(typeof started.args.idempotencyKey, "string");
 });
@@ -131,12 +132,28 @@ test("editing a reviewed script revokes approval and blocks unsaved generation",
   assert.equal(
     (
       screen.getByRole("button", {
-        name: "Generate labelled sample scenes",
+        name: "Generate AI scenes",
       }) as HTMLButtonElement
     ).disabled,
     true,
   );
   assert.ok(screen.getByText(/Unsaved edits/));
+});
+test("static fallback must be selected and approved explicitly; an AI error never starts it",async()=>{
+  const project=fixture(),{api,calls}=transport(project);
+  render(<EmbeddedStudio transport={api} incoming={response(project)} />);
+  const source=await screen.findByRole("combobox",{name:"Footage source"});
+  assert.equal((source as HTMLSelectElement).value,"wan");
+  assert.equal(calls.some(call=>call.name==="start_video_job"),false);
+  fireEvent.change(source,{target:{value:"static"}});
+  fireEvent.click(screen.getByRole("checkbox",{name:/I reviewed and approve/}));
+  fireEvent.click(screen.getByRole("button",{name:"Render static fallback"}));
+  assert.match(screen.getByRole("alertdialog").textContent!,/NOT AI-generated footage/);
+  assert.equal((source as HTMLSelectElement).disabled,true);
+  assert.equal(calls.some(call=>call.name==="start_video_job"),false);
+  fireEvent.click(screen.getByRole("button",{name:"Approve & start"}));
+  await waitFor(()=>assert.equal(calls.find(call=>call.name==="start_video_job")?.args.generationMode,"static"));
+  assert.equal(calls.find(call=>call.name==="grant_cost_consent")?.args.generationMode,"static");
 });
 test("composition confirmation stays next to its action and cancellation restores focus without starting a job", async () => {
   const project = fixture();
@@ -225,7 +242,7 @@ test("no download until a valid final preview; expired media revokes download an
   assert.equal(screen.queryByRole("button", { name: /Download/ }), null);
   Object.defineProperty(video, "duration", { value: 8, configurable: true });
   fireEvent.loadedMetadata(video);
-  assert.ok(screen.getByRole("button", { name: "Download sample MP4" }));
+  assert.ok(screen.getByRole("button", { name: "Download MP4" }));
   assert.equal(
     outputIsReady(project, project.finalAssetId, "https://media.example.test"),
     true,

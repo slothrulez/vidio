@@ -40,6 +40,7 @@ import {
   type Operation,
 } from "./types";
 import type { ToolName } from "./service";
+import { GenerationModeControl, generationDescription, footageLabel, type GenerationMode } from "./GenerationModeControl";
 
 export type StudioTransport = {
   callTool: (
@@ -158,6 +159,8 @@ export function Studio({
     [error, setError] = useState(""),
     [dirty, setDirty] = useState<Record<number, boolean>>({});
   const [selected, setSelected] = useState<number[]>([]);
+  const [generationMode,setGenerationMode] = useState<GenerationMode>("wan");
+  const [transition,setTransition] = useState<"cut"|"fade">("cut");
   const [confirmation, setConfirmation] = useState<{
     operation: Operation;
     segmentId?: number;
@@ -331,6 +334,8 @@ export function Studio({
         revision: project.revision,
         idempotencyKey: crypto.randomUUID(),
         ...options,
+        ...(["generate_segments","regenerate_segment"].includes(operation) ? {generationMode} : {}),
+        ...(operation === "compose_video" ? {composition:{subtitles:true,backgroundMusic:"soft",transition}} : {}),
       }),
     );
   };
@@ -413,7 +418,7 @@ export function Studio({
         <div className="rounded-xl border border-purple-100 bg-purple-50/80 px-4 py-3 text-xs sm:text-sm text-purple-900 flex gap-3">
           <Sparkles className="shrink-0 mt-0.5" size={16} />
           <p>
-            {production ? <><strong>Live provider mode.</strong> Generation requires confirmation and consumes your approved daily segment allowance. Recognition and draft-script providers are not yet connected; import reviewed scripts through the authenticated API.</> : <><strong>A safe preview, not live AI generation.</strong> Recognition and scripts are fixtures. Audio is a sample tone; videos are two-second local samples. No paid providers or credits are used.</>}
+            {production ? <><strong>Live provider mode.</strong> Choose Wan AI or explicit static fallback. Ark requires separate paid opt-in. Recognition and draft-script providers are not connected; import reviewed scripts through the authenticated API.</> : <><strong>Preview workspace.</strong> Recognition and scripts are fixtures; voice preview is a tone. Select Wan for real AI footage when free GPU quota is available, or explicitly choose the static-image fallback.</>}
           </p>
         </div>
         {error && (
@@ -735,15 +740,14 @@ export function Studio({
                     />
                   </div>
                 )}
+                <GenerationModeControl value={generationMode} onChange={setGenerationMode} disabled={busy || !!confirmation} production={production} />
                 <Button
                   className="bg-[#7543cf] hover:bg-[#6332b8]"
                   disabled={busy || hasEdits}
-                  onClick={() =>
-                    setConfirmation({ operation: "generate_segments" })
-                  }
+                  onClick={() => setConfirmation({ operation: "generate_segments" })}
                 >
                   <Film size={16} />
-                  Generate sample scenes
+                  {generationMode === "static" ? "Render static fallback" : job?.status === "failed" ? "Retry AI generation" : "Generate AI scenes"}
                 </Button>
                 {hasEdits && (
                   <p className="text-xs text-purple-700">
@@ -772,7 +776,7 @@ export function Studio({
                         controls
                         preload="metadata"
                         src={media[segment.assetId]}
-                        aria-label={`Sample scene ${segment.id}`}
+                        aria-label={`Scene ${segment.id}`}
                         className="w-full aspect-video bg-purple-100 object-contain"
                       />
                       <CardContent className="p-4 space-y-3">
@@ -792,7 +796,7 @@ export function Studio({
                             Scene {segment.id}
                           </label>
                           <span className="text-xs text-slate-400">
-                            {segment.duration}s · sample
+                            {segment.duration}s · {footageLabel(segment.generationMode)}
                           </span>
                         </div>
                         <p className="text-xs text-slate-500">
@@ -810,12 +814,17 @@ export function Studio({
                           }
                         >
                           <RefreshCw size={13} />
-                          Regenerate sample
+                          Regenerate scene
                         </Button>
                       </CardContent>
                     </Card>
                   ))}
                 </div>
+                <label className="block text-sm">Scene transitions
+                  <select aria-label="Scene transitions" value={transition} disabled={busy || !!confirmation} onChange={event=>setTransition(event.target.value === "fade" ? "fade" : "cut")} className="ml-3 rounded border p-2">
+                    <option value="cut">Hard cut</option><option value="fade">Fade through black</option>
+                  </select>
+                </label>
                 <Button
                   className="bg-[#7543cf] hover:bg-[#6332b8]"
                   disabled={busy || hasEdits || !selected.length}
@@ -841,7 +850,7 @@ export function Studio({
                         04 / Final cut
                       </p>
                       <h2 className="text-xl font-semibold">
-                        Your sample story is ready.
+                        Your final cut is ready.
                       </h2>
                     </div>
                     <Badge className="bg-emerald-50 text-emerald-700 hover:bg-emerald-50">
@@ -852,22 +861,21 @@ export function Studio({
                   <video
                     controls
                     src={finalUrl}
-                    aria-label="Composed sample video"
+                    aria-label="Composed video"
                     className="w-full max-h-96 rounded-xl bg-purple-100"
                   />
                   <Button asChild className="bg-[#7543cf] hover:bg-[#6332b8]">
                     <a
                       href={`${finalUrl}&download=1`}
-                      download={production ? "vidio.mp4" : "vidio-demo.mp4"}
+                      download="vidio.mp4"
                       rel="noreferrer"
                     >
                       <Download size={16} />
-                      Download sample MP4
+                      Download MP4
                     </a>
                   </Button>
                   <p className="text-xs text-slate-500">
-                    This file contains local sample visuals and audio tones, not
-                    AI-generated video or narration.
+                    Scene sources: {Array.from(new Set(project?.segments.map(segment=>footageLabel(segment.generationMode)))).join("; ")}. Static scenes remain labelled; background music is synthetic. Wan does not generate spoken narration.
                   </p>
                 </CardContent>
               </Card>
@@ -887,13 +895,9 @@ export function Studio({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{production ? "Approve this step?" : "Run this demo step?"}</AlertDialogTitle>
+            <AlertDialogTitle>Approve this step?</AlertDialogTitle>
             <AlertDialogDescription>
-              {production ? "Generation submits paid provider tasks within your operator-approved daily allowance. Composition processes your completed owned media. Your saved script revision will be used." : <>{confirmation?.operation === "preview_voice"
-                ? "This produces a short sample tone, not spoken narration."
-                : "This creates clearly labelled local sample media, not AI-generated scenes."}{" "}
-              No paid provider or credits are used. Your current saved script
-              revision will be used.</>}
+              {confirmation?.operation === "compose_video" ? "FFmpeg combines the selected completed scenes with captions and synthetic background music. No new AI inference is requested." : confirmation?.operation === "preview_voice" ? "This produces a sample tone, not spoken narration." : generationDescription(generationMode)}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
