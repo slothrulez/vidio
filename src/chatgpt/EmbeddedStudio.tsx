@@ -520,7 +520,7 @@ export function EmbeddedStudio({
       <div className="rounded-xl bg-purple-50 border border-purple-100 p-3 text-sm text-purple-900">
         {(project?.mode ?? incoming?.structuredContent.mode) === "production"
           ? "Paid generation uses your configured provider and daily allowance. Recognition/script adapters may be unavailable. English voiceover is requested from the native-audio model, not guaranteed by a dedicated TTS engine."
-          : "Demo only: product recognition and English scripts are fixtures, not image analysis. Video samples are actually rendered locally; audio is a tone, not English speech. No paid provider calls."}
+          : "Local studio: configure GEMINI_API_KEY for photo analysis and tailored English scripts. Product scenes are rendered locally with FFmpeg; narration is optional and unavailable unless configured."}
       </div>
       {error && (
         <div
@@ -882,7 +882,7 @@ export function EmbeddedStudio({
               >
                 <Film size={16} />
                 {project.mode === "demo"
-                  ? "Generate labelled sample scenes"
+                  ? "Generate product scenes"
                   : "Generate paid video scenes"}
               </Button>
               {action?.name === "start_video_job" && confirmation}

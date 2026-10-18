@@ -31,6 +31,8 @@ export const projectSchema = z.object({
   activeJobId: z.uuid().optional(),
   createdAt: z.string(),
   mode: z.enum(["demo", "production"]),
+  marketingSource: z.enum(["gemini", "local"]).optional(),
+  notice: z.string().max(300).optional(),
 });
 export type StudioProject = z.infer<typeof projectSchema>;
 export const segmentRecordSchema = z.object({

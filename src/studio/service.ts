@@ -73,7 +73,7 @@ export async function executeTool(
   const mode=studioMode();
   let project, job, projects, upload;
   let message = mode === "demo" ?
-    "Demo only: recognition and scripts are fixtures; voice is a sample tone and videos are local sample media. No AI provider was called." : "Production studio: owned projects, durable jobs and private media.";
+    "Local studio: generic marketing copy and FFmpeg video scenes work offline; Gemini analysis is an explicit optional integration." : "Production studio: owned projects, durable jobs and private media.";
   if (Object.hasOwn(uploadSchemas,name)) {
     const result=await executeUpload(owner,name as UploadTool,args);
     project=result.project;

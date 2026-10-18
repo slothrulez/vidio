@@ -71,8 +71,7 @@ export async function POST(request: Request) {
       structuredContent: {
         mode,
         project,
-        message:
-          mode === "demo" ? "Image uploaded privately. Demo recognition is a fixture, not an image analysis." : "Image uploaded privately. Production recognition requires a configured live adapter.",
+        message: mode === "demo" ? "Product image uploaded privately. Local scripts and FFmpeg video export work without Gemini; set GEMINI_API_ENABLED=true to opt into Gemini analysis." : "Product image uploaded privately.",
       },
       _meta: { media: await projectMedia(owner, project) },
     });

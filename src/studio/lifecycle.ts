@@ -126,6 +126,11 @@ const messages: Record<string, string> = {
   WORKER_ERROR: "Worker failed; completed segments remain available.",
   POLL: "Provider status temporarily unavailable.",
   STORAGE: "Private asset storage temporarily unavailable.",
+  GEMINI_AUTH: "Gemini rejected the API key or API access. Check GEMINI_API_KEY and Gemini API access.",
+  GEMINI_QUOTA: "Gemini rate or quota limit reached. Check the project quota before retrying.",
+  GEMINI_REQUEST: "Gemini rejected the request. Check the configured model and request access.",
+  GEMINI_RESPONSE: "Gemini returned an invalid campaign response. Retry after checking the configured model.",
+  GEMINI_UNAVAILABLE: "Could not reach Gemini. Check network access, then retry.",
 };
 export async function failJob(job: ClaimedJob, error: unknown) {
   const code = error instanceof StudioError ? error.code : "WORKER_ERROR";

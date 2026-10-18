@@ -413,7 +413,7 @@ export function Studio({
         <div className="rounded-xl border border-purple-100 bg-purple-50/80 px-4 py-3 text-xs sm:text-sm text-purple-900 flex gap-3">
           <Sparkles className="shrink-0 mt-0.5" size={16} />
           <p>
-            {production ? <><strong>Live provider mode.</strong> Generation requires confirmation and consumes your approved daily segment allowance. Recognition and draft-script providers are not yet connected; import reviewed scripts through the authenticated API.</> : <><strong>A safe preview, not live AI generation.</strong> Recognition and scripts are fixtures. Audio is a sample tone; videos are two-second local samples. No paid providers or credits are used.</>}
+            {production ? <><strong>Live provider mode.</strong> Generation requires confirmation and consumes your approved daily segment allowance. Recognition and draft-script providers are not connected in this mode.</> : <><strong>Local studio.</strong> Product scripts and video export work locally. Gemini analysis is optional and requires GEMINI_API_ENABLED=true. Narration is currently unavailable.</>}
           </p>
         </div>
         {error && (
@@ -648,8 +648,9 @@ export function Studio({
                       <p className="text-sm text-slate-500 mt-2">
                         {project.features.length
                           ? project.features.join(" · ")
-                          : "Demo recognition creates a sample brief, without analyzing your image."}
+                          : "Upload a product image to identify it or create a brief."}
                       </p>
+                      {project.notice && <p role="status" className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">{project.notice}</p>}
                     </div>
                     <Button
                       size="sm"
@@ -673,7 +674,7 @@ export function Studio({
                       disabled={busy}
                       onClick={() => start("draft_scripts")}
                     >
-                      Draft sample scripts
+                      Draft scripts
                       <ArrowRight size={15} />
                     </Button>
                   )}
@@ -694,12 +695,12 @@ export function Studio({
                   <Button
                     variant="outline"
                     size="sm"
-                    disabled={busy || hasEdits}
+                    disabled
                     onClick={() =>
                       setConfirmation({ operation: "preview_voice" })
                     }
                   >
-                    Preview sample tone
+                    Narration unavailable
                   </Button>
                 </div>
                 <div className="grid sm:grid-cols-2 gap-4">
@@ -743,7 +744,7 @@ export function Studio({
                   }
                 >
                   <Film size={16} />
-                  Generate sample scenes
+                  Generate product scenes
                 </Button>
                 {hasEdits && (
                   <p className="text-xs text-purple-700">
@@ -890,8 +891,8 @@ export function Studio({
             <AlertDialogTitle>{production ? "Approve this step?" : "Run this demo step?"}</AlertDialogTitle>
             <AlertDialogDescription>
               {production ? "Generation submits paid provider tasks within your operator-approved daily allowance. Composition processes your completed owned media. Your saved script revision will be used." : <>{confirmation?.operation === "preview_voice"
-                ? "This produces a short sample tone, not spoken narration."
-                : "This creates clearly labelled local sample media, not AI-generated scenes."}{" "}
+                ? "Narration is not available in this local setup."
+                : "FFmpeg renders the uploaded product image with animated movement and your script as on-screen captions. No generated footage or narration is included."}{" "}
               No paid provider or credits are used. Your current saved script
               revision will be used.</>}
             </AlertDialogDescription>

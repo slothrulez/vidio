@@ -56,15 +56,15 @@ const titles: Record<McpToolName, string> = {
   get_download: "Get sample video download",
   update_script: "Edit a demo script",
   grant_cost_consent: "Record human approval for a paid step",
-  identify_product: "Identify sample product",
-  draft_scripts: "Draft fixture scripts",
+  identify_product: "Analyze uploaded product image",
+  draft_scripts: "Draft product marketing scripts",
   generate_scripts: "Generate product scripts",
   start_video_job: "Start a sample video job after explicit approval",
   get_video_job_status: "Read video job status",
-  preview_voice: "Preview sample audio tone",
-  generate_segments: "Generate local sample scenes",
-  regenerate_segment: "Regenerate one sample scene",
-  compose_video: "Compose selected sample scenes",
+  preview_voice: "Preview narration (not configured)",
+  generate_segments: "Render product video scenes locally",
+  regenerate_segment: "Regenerate one product video scene locally",
+  compose_video: "Compose selected product video scenes",
   compose_final_video: "Compose a sample final video after explicit approval",
   get_final_video: "Read the final video asset",
 };
@@ -87,7 +87,7 @@ export function createMcpServer(owner: string) {
       name,
       {
         title: mode==="demo" ? titles[name] : titles[name].replace(/(?:demo|sample|fixture|local) /gi,""),
-        description: mode==="demo" ? `${titles[name]}. Authenticated DEMO ONLY: no AI/provider generation. Uses fixture recognition/scripts, sample tones and local two-second videos. Job tools require the current project revision; generation/composition require confirmed=true. This flag is not verified human consent; paid execution is disabled. Use synthetic test data.` : "Authenticated owner-scoped production studio. Generation requires confirmed=true, an idempotency key, operator opt-in and daily segment budget. Poll returned job IDs for durable progress. Recognition, draft scripts and voice preview are not yet connected in production and fail explicitly. Confirmation is client-declared, not proof of human consent.",
+        description: mode==="demo" ? `${titles[name]}. Authenticated local studio. Generic marketing copy and FFmpeg video scenes work without external services. Gemini image analysis is optional and enabled only with GEMINI_API_ENABLED=true and a configured key. Narration is optional. Paid video providers are disabled.` : "Authenticated owner-scoped production studio. Generation requires confirmed=true, an idempotency key, operator opt-in and daily segment budget. Poll returned job IDs for durable progress. Recognition, draft scripts and voice preview are not yet connected in production and fail explicitly. Confirmation is client-declared, not proof of human consent.",
         inputSchema: mcpSchemas[name],
         outputSchema: toolOutputSchema,
         annotations: {
@@ -144,7 +144,7 @@ export function createMcpServer(owner: string) {
             prefersBorder: true,
           },
           "openai/widgetDescription":
-            mode==="demo" ? "vidio demo studio: review fixture scripts, generate local sample scenes and compose a demo video. No paid AI calls." : "vidio studio: inspect owned jobs and media, approve generation within your configured budget, and compose completed scenes.",
+            mode==="demo" ? "vidio local studio: review generic or Gemini-generated scripts, render product-image scenes with FFmpeg and compose a real MP4." : "vidio studio: inspect owned jobs and media, approve generation within your configured budget, and compose completed scenes.",
           "openai/widgetCSP": {
             resource_domains: [publicOrigin()],
             connect_domains: [],
