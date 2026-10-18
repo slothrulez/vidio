@@ -6,6 +6,7 @@ import { executeDemo, type ExecutionContext } from "./studio/demo";
 import { studioMode, workerLimits } from "./studio/config";
 import { composeOwnedSegments } from "./studio/composition";
 import { ArkVideoProvider,executeVideoJob } from "./studio/video-provider";
+import { WanVideoProvider } from "./studio/wan-provider";
 import { composedAsset,composedCaption,persistComposition } from "./studio/lifecycle";
 import { claimJob, heartbeat, completeJob, failJob, recoverJobs, completedSegment, persistSegment, type ClaimedJob } from "./studio/lifecycle";
 import { StudioError, type StudioProject } from "./studio/types";
@@ -17,6 +18,14 @@ export type JobExecutor = (job: ClaimedJob, project: StudioProject, context: Exe
 const demoExecutor: JobExecutor = (job, project, context) => executeDemo(job.owner,job.id,job.operation,job.input,project,context);
 const managedExecutor: JobExecutor = async (job,project,context) => {
   if (project.mode!==studioMode()) throw new StudioError("MODE","Project mode does not match the worker");
+  if (["generate_segments","regenerate_segment"].includes(job.operation)) {
+    const mode=job.input.generationMode ?? (project.mode === "demo" ? "static" : "ark");
+    if (mode === "static") return demoExecutor(job,project,context);
+    if (mode === "wan") {
+      if (process.env.VIDIO_WAN_ENABLED !== "true") throw new StudioError("BUDGET","Wan ZeroGPU is disabled by the operator");
+      return executeVideoJob(job,project,context,new WanVideoProvider());
+    }
+  }
   if (project.mode==="demo") return demoExecutor(job,project,context);
   if (job.operation==="compose_video") return composeOwnedSegments(job.owner,project,job.input.segmentIds!,context.signal,context.checkpoint,job.input.composition);
   if (process.env.VIDIO_PAID_GENERATION_ENABLED!=="true") throw new StudioError("BUDGET","Paid generation is disabled");

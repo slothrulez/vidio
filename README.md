@@ -15,7 +15,7 @@ vidio helps e-commerce sellers and creators turn product images into short promo
 
 ## Safe MCP Apps preview (no paid provider calls)
 
-The `/studio` page and `/mcp` endpoint offer a **demo-only** product-video workflow. Recognition and scripts are fixtures; audio is a sample tone, and sample video scenes are locally rendered by FFmpeg. This is not live AI image recognition, narrated TTS, or AI video generation. In `VIDIO_MODE=demo`, the existing provider, file and proxy APIs return 503 to prevent bypassing this boundary. The original implementation is retained for later authenticated integration.
+The `/studio` page and `/mcp` endpoint offer a managed preview workflow. Recognition and script drafts are fixtures; voice preview is a sample tone. Scene generation now has explicit **Wan AI footage** and **Static-image fallback — NOT AI** modes. Wan requires operator opt-in (`VIDIO_WAN_ENABLED=true`) and available anonymous shared ZeroGPU capacity; it supports image-to-video and text-to-video without a paid token. The static renderer is never used after an AI failure. See [VIDEO_GENERATION.md](VIDEO_GENERATION.md) for verified model licensing, hardware requirements, privacy, setup, retry behavior and real free-inference results. Legacy provider/file/proxy APIs remain blocked in managed demo mode.
 
 Requires Node.js 22.12+ (24 recommended), pnpm, Docker, and FFmpeg with libx264. From the repository root:
 
@@ -73,9 +73,9 @@ The canonical tools are:
 | `identify_product` | `{ projectId: UUID, revision: integer ≥ 0, idempotencyKey?: string (8–100 chars), confirmed?: boolean }` | Queues fixture recognition; mutates the project. |
 | `generate_scripts` | Same as `identify_product` | Queues four fixture scripts after identification. |
 | `grant_cost_consent` (app-only) | `{ projectId, revision, operation: start_video_job \| regenerate_segment \| compose_final_video, idempotencyKey }` | Records a single-use human approval bound to owner, project, revision, operation and idempotencyKey; returns `consent.token` (10-minute expiry). Paid tools require it as `consentToken` with the same `idempotencyKey` in every mode. |
-| `start_video_job` | `{ projectId, revision, idempotencyKey?, confirmed: true, consentToken? }` | Explicit approval required; queues local sample scenes. |
+| `start_video_job` | `{ projectId, revision, idempotencyKey?, confirmed: true, consentToken?, generationMode?: "wan" \| "static" \| "ark" }` | Explicit approval required; queues real Wan footage, labelled static fallback, or paid Ark scenes in the selected mode. |
 | `get_video_job_status` | `{ jobId: UUID }` | Read-only; returns the owned job ID, status, progress and bounded error. |
-| `regenerate_segment` | `{ projectId, revision, idempotencyKey?, confirmed: true, segmentId: integer 1–4 }` | Explicit approval required; queues one sample scene. |
+| `regenerate_segment` | `{ projectId, revision, idempotencyKey?, confirmed: true, segmentId: integer 1–4, generationMode?: "wan" \| "static" \| "ark" }` | Explicit approval required; regenerates one scene in the selected mode. |
 | `compose_final_video` | `{ projectId, revision, idempotencyKey?, confirmed: true, segmentIds: unique array of 1–4 integers 1–4 }` | Explicit approval required; queues local composition. |
 | `get_final_video` | `{ projectId: UUID }` | Read-only; returns the owned final asset ID, MIME type and a short-lived signed download URL in MCP result `_meta.media[assetId]`. |
 

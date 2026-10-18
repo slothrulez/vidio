@@ -231,6 +231,12 @@ export async function startJob(
   input: JobInput,
 ) {
   const mode=studioMode();
+  const generation = ["generate_segments","regenerate_segment"].includes(operation);
+  if (generation) input={...input,generationMode:input.generationMode ?? (mode === "demo" ? "static" : "ark")};
+  if (generation && input.generationMode === "wan" && process.env.VIDIO_WAN_ENABLED !== "true")
+    throw new StudioError("PROVIDER_CONFIGURATION","Wan ZeroGPU is disabled. Enable VIDIO_WAN_ENABLED after reviewing external image sharing and free-quota limits, or explicitly select static fallback.",503);
+  if (generation && input.generationMode === "ark" && mode !== "production")
+    throw new StudioError("BUDGET","Paid Ark generation is not allowed in demo mode",503);
   if (mode === "production" && !["generate_segments","regenerate_segment","compose_video"].includes(operation))
     throw new StudioError("NOT_CONFIGURED","Recognition, scripts and voice previews are not connected to live providers",503);
   if (mode === "production" && !input.idempotencyKey)
@@ -269,16 +275,18 @@ export async function startJob(
     if (project.activeJobId)
       throw new StudioError("BUSY", "A project job is already active", 409);
     validateOperation(operation, project, input);
-    if (mode === "production" && operation !== "compose_video") {
+    if (generation && input.generationMode !== "static") {
       const ordinals=operation==="regenerate_segment" ? [input.segmentId!] : project.scripts.map(script=>script.id);
       const unresolved=await client.query("SELECT id FROM vidio_job_segments WHERE project_id=$1 AND owner_id=$2 AND ordinal=ANY($3::int[]) AND (error_code='SUBMISSION_UNKNOWN' OR status='submitting' OR (provider_task_id IS NOT NULL AND asset_id IS NULL AND NOT (status='failed' AND error_code='PROVIDER_FAILED'))) LIMIT 1",[project.id,owner,ordinals]);
-      if (unresolved.rows.length) throw new StudioError("RECONCILIATION","Reconcile the previous provider submission before approving another paid request for this scene",409);
-      const dailyLimit=Number(process.env.VIDIO_MAX_PAID_SEGMENTS_PER_OWNER_DAY);
-      if (process.env.VIDIO_PAID_GENERATION_ENABLED !== "true" || !Number.isInteger(dailyLimit) || dailyLimit<1 || dailyLimit>100)
-        throw new StudioError("BUDGET","Paid generation requires explicit operator opt-in and a daily segment budget",503);
-      const reserved=await client.query("SELECT count(*)::int AS n FROM vidio_job_segments WHERE owner_id=$1 AND created_at>=date_trunc('day',now())",[owner]);
-      const requested=operation === "regenerate_segment" ? 1 : project.scripts.length;
-      if (reserved.rows[0].n+requested>dailyLimit) throw new StudioError("BUDGET","Daily approved segment budget exhausted",429);
+      if (unresolved.rows.length) throw new StudioError("RECONCILIATION","Reconcile the previous provider submission before approving another AI request for this scene",409);
+      if (input.generationMode === "ark") {
+        const dailyLimit=Number(process.env.VIDIO_MAX_PAID_SEGMENTS_PER_OWNER_DAY);
+        if (process.env.VIDIO_PAID_GENERATION_ENABLED !== "true" || !Number.isInteger(dailyLimit) || dailyLimit<1 || dailyLimit>100)
+          throw new StudioError("BUDGET","Paid generation requires explicit operator opt-in and a daily segment budget",503);
+        const reserved=await client.query("SELECT count(*)::int AS n FROM vidio_job_segments s JOIN vidio_jobs j ON j.id=s.job_id WHERE s.owner_id=$1 AND s.created_at>=date_trunc('day',now()) AND coalesce(j.input->>'generationMode','ark')='ark'",[owner]);
+        const requested=operation === "regenerate_segment" ? 1 : project.scripts.length;
+        if (reserved.rows[0].n+requested>dailyLimit) throw new StudioError("BUDGET","Daily approved segment budget exhausted",429);
+      }
     }
     const count = await client.query(
       "SELECT count(*)::int AS n FROM vidio_jobs WHERE owner_id=$1",

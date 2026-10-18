@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+export const generationModeSchema = z.enum(["wan", "ark", "static"]);
+
 export const scriptSchema = z.object({
   id: z.number().int().min(1).max(4),
   script: z.string().min(1).max(1000),
@@ -21,6 +23,8 @@ export const projectSchema = z.object({
       assetId: z.uuid(),
       duration: z.number(),
       script: z.string(),
+      generationMode: generationModeSchema.optional(),
+      model: z.string().optional(),
     }),
   ),
   imageAssetId: z.uuid().optional(),
@@ -67,6 +71,7 @@ export type StudioJob = z.infer<typeof jobSchema>;
 export const compositionOptionsSchema = z.object({
   subtitles: z.boolean().default(false),
   backgroundMusic: z.enum(["none", "soft"]).default("none"),
+  transition: z.enum(["cut", "fade"]).optional(),
 }).strict();
 export type CompositionOptions = z.infer<typeof compositionOptionsSchema>;
 export const jobInputSchema = z
@@ -75,6 +80,7 @@ export const jobInputSchema = z
     revision: z.number().int().nonnegative(),
     idempotencyKey: z.string().min(8).max(100).optional(),
     confirmed: z.boolean().default(false),
+    generationMode: generationModeSchema.optional(),
     segmentId: z.number().int().min(1).max(4).optional(),
     segmentIds: z.array(z.number().int().min(1).max(4)).max(4).optional(),
     composition: compositionOptionsSchema.optional(),

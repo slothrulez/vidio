@@ -73,7 +73,7 @@ export async function executeTool(
   const mode=studioMode();
   let project, job, projects, upload;
   let message = mode === "demo" ?
-    "Demo only: recognition and scripts are fixtures; voice is a sample tone and videos are local sample media. No AI provider was called." : "Production studio: owned projects, durable jobs and private media.";
+    "Local preview: recognition/scripts are fixtures and voice preview is a tone. Wan footage requires explicit selection and available free GPU quota; static fallback is not AI footage." : "Production studio: owned projects, durable jobs and private media.";
   if (Object.hasOwn(uploadSchemas,name)) {
     const result=await executeUpload(owner,name as UploadTool,args);
     project=result.project;
@@ -83,8 +83,7 @@ export async function executeTool(
     const input = jobInputSchema.parse(args);
     job = await startJob(owner, name as (typeof operations)[number], input);
     project = await getProject(owner, input.projectId);
-    message = mode === "demo" ?
-      "Demo job queued. Poll get_job and get_project for durable progress. No paid generation." : "Job queued. Poll get_job and get_project for durable progress.";
+    message = `Job queued${input.generationMode === "wan" ? ": anonymous Wan AI inference, subject to free GPU quota" : input.generationMode === "static" ? ": static image fallback, NOT AI footage" : ""}. Poll get_job and get_project for durable progress.`;
   } else if (name === "create_project")
     project = await createProject(owner, schemas.create_project.parse(args));
   else if (name === "list_projects") {

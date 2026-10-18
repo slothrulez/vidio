@@ -4,6 +4,7 @@ import { database, transaction } from "./db";
 import { getProject, saveProject, jobFromRow } from "./store";
 import { jobInputSchema, scriptSchema, StudioError, type Operation, type StudioProject } from "./types";
 import { workerLimits } from "./config";
+import { redactText } from "../lib/log-redact";
 
 export type ClaimedJob = {
   id: string;
@@ -56,7 +57,10 @@ export async function completedSegment(job: ClaimedJob, ordinal: number) {
     const rows = await client.query("SELECT * FROM vidio_job_segments WHERE job_id=$1 AND owner_id=$2 AND ordinal=$3 FOR UPDATE", [job.id, job.owner, ordinal]);
     const row = rows.rows[0];
     if (!row) throw new StudioError("SEGMENT", "Segment record not found");
-    if (row.status === "completed") return { id: ordinal, assetId: String(row.asset_id), duration: Number(row.duration), script: scriptSchema.parse(row.script).script };
+    if (row.status === "completed") {
+      const project=await getProject(job.owner,job.projectId,client);
+      return project.segments.find(segment=>segment.id===ordinal && segment.assetId===String(row.asset_id)) ?? { id: ordinal, assetId: String(row.asset_id), duration: Number(row.duration), script: scriptSchema.parse(row.script).script };
+    }
     if ((row.status === "submitting" || row.error_code==="SUBMISSION_UNKNOWN") && !row.provider_task_id)
       throw new StudioError("SUBMISSION_UNKNOWN", "Provider submission needs reconciliation; automatic resubmission is disabled");
     await client.query("UPDATE vidio_job_segments SET status=CASE WHEN provider_task_id IS NULL THEN 'running' ELSE 'submitted' END,attempts=attempts+1,error=NULL,error_code=NULL,updated_at=now() WHERE id=$1", [row.id]);
@@ -87,6 +91,12 @@ export async function providerCheckpoint(job: ClaimedJob, ordinal: number, taskI
 export async function providerTask(job: ClaimedJob, ordinal: number) {
   const result = await database().query("SELECT provider_task_id FROM vidio_job_segments WHERE job_id=$1 AND ordinal=$2 AND owner_id=$3", [job.id, ordinal, job.owner]);
   return result.rows[0]?.provider_task_id as string | null;
+}
+export async function providerRunning(job: ClaimedJob, ordinal: number) {
+  await locked(job,client=>client.query("UPDATE vidio_job_segments SET status='running',updated_at=now() WHERE job_id=$1 AND ordinal=$2 AND provider_task_id IS NOT NULL AND status='submitted'",[job.id,ordinal]));
+}
+export async function rejectedSubmission(job: ClaimedJob, ordinal: number) {
+  await locked(job,client=>client.query("UPDATE vidio_job_segments SET status='failed',error_code='PROVIDER_FAILED',updated_at=now() WHERE job_id=$1 AND ordinal=$2 AND provider_task_id IS NULL AND status='submitting'",[job.id,ordinal]));
 }
 export async function composedAsset(job:ClaimedJob) {
   return locked(job,async(client)=>{
@@ -121,11 +131,16 @@ export async function completeJob(job: ClaimedJob, updated: StudioProject) {
 }
 const messages: Record<string, string> = {
   TIMEOUT: "Job deadline reached; completed segments remain available.",
-  SUBMISSION_UNKNOWN: "Provider submission outcome is unknown. Reconcile it before approving another paid request.",
-  PROVIDER_FAILED: "The provider task failed. No automatic paid resubmission was made.",
+  SUBMISSION_UNKNOWN: "Provider submission outcome is unknown. Reconcile it before approving another AI request.",
+  PROVIDER_FAILED: "The provider task failed. No automatic resubmission or static fallback was used.",
   WORKER_ERROR: "Worker failed; completed segments remain available.",
   POLL: "Provider status temporarily unavailable.",
   STORAGE: "Private asset storage temporarily unavailable.",
+  PROVIDER_MEDIA: "Generated video failed media validation; no fallback was used.",
+  PROVIDER_UNAVAILABLE: "Free GPU inference is unavailable. Retry later or explicitly select static fallback.",
+  PROVIDER_REJECTED: "Free GPU inference rejected the request; no fallback was used.",
+  PROVIDER_UPLOAD: "The product image could not be uploaded to the GPU provider.",
+  BUDGET: "The selected generation provider is disabled by the operator.",
 };
 export async function failJob(job: ClaimedJob, error: unknown) {
   const code = error instanceof StudioError ? error.code : "WORKER_ERROR";
@@ -136,11 +151,12 @@ export async function failJob(job: ClaimedJob, error: unknown) {
     const row = result.rows[0];
     const unknown = (await client.query("SELECT id FROM vidio_job_segments WHERE job_id=$1 AND status='submitting' AND provider_task_id IS NULL", [job.id])).rows.length > 0;
     const failureCode = unknown ? "SUBMISSION_UNKNOWN" : code;
+    const message = error instanceof StudioError && ["PROVIDER_FAILED","PROVIDER_MEDIA","PROVIDER_UNAVAILABLE","PROVIDER_REJECTED","PROVIDER_UPLOAD","PROMPT","BUDGET","PROVIDER_CONFIGURATION"].includes(failureCode) ? redactText(error.message,500) : messages[failureCode] ?? messages.WORKER_ERROR;
     const cancelled = Boolean(row.cancel_requested) || code === "CANCELLED";
     const retryable = !cancelled && !unknown && row.attempts<row.max_attempts && ["POLL", "STORAGE", "WORKER_ERROR","TIMEOUT"].includes(code);
     const retry = retryable && row.attempts < row.max_attempts && new Date(row.deadline_at).getTime() > Date.now();
-    await client.query("UPDATE vidio_jobs SET status=$2,error=$3,error_code=$4,retryable=$5,queue_id=NULL,lease_until=NULL,lease_token=NULL,updated_at=now(),completed_at=CASE WHEN $6 THEN NULL ELSE now() END,next_attempt_at=now()+$7*interval '1 second' WHERE id=$1", [job.id, cancelled ? "cancelled" : retry ? "queued" : "failed", cancelled ? null : messages[failureCode] ?? messages.WORKER_ERROR, cancelled ? null : failureCode, retryable, retry, Math.min(30, 2 ** Number(row.attempts))]);
-    await client.query("UPDATE vidio_job_segments SET status='failed',error_code=$2,error=$3,updated_at=now() WHERE job_id=$1 AND status NOT IN ('completed','queued')", [job.id, failureCode, messages[failureCode] ?? messages.WORKER_ERROR]);
+    await client.query("UPDATE vidio_jobs SET status=$2,error=$3,error_code=$4,retryable=$5,queue_id=NULL,lease_until=NULL,lease_token=NULL,updated_at=now(),completed_at=CASE WHEN $6 THEN NULL ELSE now() END,next_attempt_at=now()+$7*interval '1 second' WHERE id=$1", [job.id, cancelled ? "cancelled" : retry ? "queued" : "failed", cancelled ? null : message, cancelled ? null : failureCode, retryable, retry, Math.min(30, 2 ** Number(row.attempts))]);
+    await client.query("UPDATE vidio_job_segments SET status='failed',error_code=$2,error=$3,updated_at=now() WHERE job_id=$1 AND status <> 'completed'", [job.id, failureCode, message]);
     if (!retry) await client.query("UPDATE vidio_projects SET data=data-'activeJobId' WHERE id=$1 AND owner_id=$2 AND data->>'activeJobId'=$3", [job.projectId, job.owner, job.id]);
   });
 }

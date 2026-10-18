@@ -32,6 +32,7 @@ import type {
   ToolResponse,
 } from "../studio/types";
 import { imageIds, jobIsActive, outputIsReady, sceneStates } from "./ui-state";
+import { GenerationModeControl, generationDescription, footageLabel, type GenerationMode } from "../studio/GenerationModeControl";
 
 export type EmbeddedTransport = {
   callTool: (
@@ -46,20 +47,19 @@ type ActionRequest = {
   segmentId?: number;
   segmentIds?: number[];
   composition?: CompositionOptions;
+  generationMode?: GenerationMode;
 };
 type Action = ActionRequest & {projectId:string;revision:number};
 type Draft = { script: string; prompt: string; revision:number };
 
 function ActionConfirmation({
   action,
-  mode,
   disabled,
   onCancel,
   onConfirm,
   returnFocus,
 }: {
   action: Action;
-  mode: StudioProject["mode"];
   disabled: boolean;
   onCancel: () => void;
   onConfirm: () => void;
@@ -86,9 +86,7 @@ function ActionConfirmation({
                 : "Approve video generation?"}
           </DialogTitle>
           <DialogDescription>
-            {mode === "demo"
-              ? "This renders explicitly labelled local samples. No paid AI generation or real speech occurs."
-              : "This starts work using your configured provider/worker and may consume your approved allowance. The current saved script and selected settings will be used."}{" "}
+            {action.name === "compose_final_video" ? "Compose completed scenes with FFmpeg; no new AI inference." : generationDescription(action.generationMode ?? "wan")}{" "}
             {action.name === "compose_final_video" &&
               `${action.segmentIds?.length} completed scenes; subtitles ${action.composition?.subtitles ? "on" : "off"}; music ${action.composition?.backgroundMusic}.`}
           </DialogDescription>
@@ -126,6 +124,7 @@ export function EmbeddedStudio({
   const [drafts, setDrafts] = useState<Record<number, Draft>>({}),
     [approval, setApproval] = useState<number>(),
     [selected, setSelected] = useState<number[]>([]);
+  const [generationMode,setGenerationMode] = useState<GenerationMode>("wan");
   const [composition, setComposition] = useState<CompositionOptions>({
       subtitles: true,
       backgroundMusic: "soft",
@@ -388,6 +387,7 @@ export function EmbeddedStudio({
         revision: request.revision,
         operation: name,
         idempotencyKey: key,
+        ...(request.generationMode ? {generationMode:request.generationMode} : {}),
       });
       const consentToken = grant.structuredContent.consent?.token;
       if (!consentToken) throw new Error("Approval could not be recorded; try again.");
@@ -489,12 +489,11 @@ export function EmbeddedStudio({
   const requestAction = (request: ActionRequest, trigger: HTMLButtonElement) => {
     if (!project) return;
     actionTrigger.current = trigger;
-    setAction({...request,projectId:project.id,revision:project.revision});
+    setAction({...request,...(request.name !== "compose_final_video" ? {generationMode} : {}),projectId:project.id,revision:project.revision});
   };
   const confirmation = action && project ? (
     <ActionConfirmation
       action={action}
-      mode={project.mode}
       disabled={busy || hasEdits || (action.name !== "compose_final_video" && approval !== project.revision)}
       onCancel={() => setAction(undefined)}
       onConfirm={() => { setAction(undefined); void start(action); }}
@@ -520,7 +519,7 @@ export function EmbeddedStudio({
       <div className="rounded-xl bg-purple-50 border border-purple-100 p-3 text-sm text-purple-900">
         {(project?.mode ?? incoming?.structuredContent.mode) === "production"
           ? "Paid generation uses your configured provider and daily allowance. Recognition/script adapters may be unavailable. English voiceover is requested from the native-audio model, not guaranteed by a dedicated TTS engine."
-          : "Demo only: product recognition and English scripts are fixtures, not image analysis. Video samples are actually rendered locally; audio is a tone, not English speech. No paid provider calls."}
+          : "Recognition and script drafts are fixtures; voice preview is a tone. Choose Wan for real AI footage using available free shared GPU quota, or explicitly choose static fallback. No paid provider calls in preview mode."}
       </div>
       {error && (
         <div
@@ -876,14 +875,13 @@ export function EmbeddedStudio({
                 />
                 I reviewed and approve this revision of the script
               </label>
+              <GenerationModeControl value={generationMode} onChange={setGenerationMode} disabled={busy || !!action} production={project.mode === "production"} />
               <Button
                 disabled={busy || hasEdits || approval !== project.revision}
                 onClick={(event) => requestAction({ name: "start_video_job" }, event.currentTarget)}
               >
                 <Film size={16} />
-                {project.mode === "demo"
-                  ? "Generate labelled sample scenes"
-                  : "Generate paid video scenes"}
+                {generationMode === "static" ? "Render static fallback" : job?.status === "failed" ? "Retry AI generation" : "Generate AI scenes"}
               </Button>
               {action?.name === "start_video_job" && confirmation}
             </section>
@@ -949,6 +947,7 @@ export function EmbeddedStudio({
                           {status.replaceAll("_", " ")}
                         </Badge>
                       </div>
+                      {segment && <p className="text-xs text-slate-500">{footageLabel(segment.generationMode)}{segment.model ? ` · ${segment.model}` : ""}</p>}
                       {segment && media[segment.assetId] ? (
                         <video
                           key={`${segment.assetId}-${mediaVersion}`}
@@ -1035,6 +1034,11 @@ export function EmbeddedStudio({
                 />
                 Include subtitles (MP4 captions + preview CC)
               </label>
+              <label className="block text-sm">Scene transitions
+                <select aria-label="Scene transitions" disabled={busy || !!action} value={composition.transition ?? "cut"} onChange={event=>setComposition(old=>({...old,transition:event.target.value === "fade" ? "fade" : "cut"}))} className="ml-3 rounded border p-2">
+                  <option value="cut">Hard cut</option><option value="fade">Fade through black</option>
+                </select>
+              </label>
               <label className="block text-sm">
                 Background music
                 <select
@@ -1082,9 +1086,10 @@ export function EmbeddedStudio({
             >
               <h2 id="embedded-final-title" className="font-semibold">
                 {project.mode === "demo"
-                  ? "Completed sample MP4"
+                  ? "Completed MP4"
                   : "Your final MP4"}
               </h2>
+              <p className="text-xs text-slate-500">Scene sources: {Array.from(new Set(project.segments.map(segment=>footageLabel(segment.generationMode)))).join("; ")}. Static scenes are not AI footage. Wan clips have no generated speech.</p>
               <video
                 key={`${project.finalAssetId}-${mediaVersion}`}
                 aria-label="Final video preview"
@@ -1154,7 +1159,7 @@ export function EmbeddedStudio({
                   }}
                 >
                   <Download size={16} />
-                  Download {project.mode === "demo" ? "sample " : ""}MP4
+                  Download MP4
                 </Button>
               ) : (
                 <p role="status" className="text-sm text-slate-500">

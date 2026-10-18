@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { setTimeout as delay } from "node:timers/promises";
-import { signedAssetUrl, registerAsset } from "./assets";
-import { providerTask,providerCheckpoint,type ClaimedJob } from "./lifecycle";
+import { signedAssetUrl, registerAsset, readAsset } from "./assets";
+import { providerTask,providerCheckpoint,providerRunning,rejectedSubmission,type ClaimedJob } from "./lifecycle";
 import { StudioError,type StudioProject,type scriptSchema } from "./types";
 import type { ExecutionContext } from "./demo";
 import { MAX_ASSET_BYTES } from "./object-store";
@@ -37,14 +37,20 @@ export async function validateProviderVideo(buffer:Buffer,ratio:StudioProject["r
 }
 
 type Script = z.infer<typeof scriptSchema>;
-const taskSchema=z.object({id:z.string().min(1).max(200),status:z.enum(["queued","running","succeeded","failed","cancelled","expired"]),content:z.object({video_url:z.string().url().optional()}).optional(),duration:z.number().positive().max(30).optional()});
+const taskSchema=z.object({id:z.string().min(1).max(200),status:z.enum(["queued","running","succeeded","failed","cancelled","expired"]),content:z.object({video_url:z.string().url().optional()}).optional(),duration:z.number().positive().max(30).optional(),error:z.string().max(500).optional()});
 export type VideoTask=z.infer<typeof taskSchema>;
 export interface VideoProvider {
+  readonly generationMode?: "wan" | "ark";
+  readonly modelName?: string;
+  uploadImage?(buffer:Buffer,mime:string,signal:AbortSignal):Promise<string>;
   submit(project:StudioProject,script:Script,imageUrl:string|undefined,signal:AbortSignal):Promise<string>;
-  poll(id:string,signal:AbortSignal):Promise<VideoTask>;
+  poll(id:string,signal:AbortSignal,onRunning?:()=>Promise<void>):Promise<VideoTask>;
   download(url:string,signal:AbortSignal):Promise<Buffer>;
+  prepare?(buffer:Buffer,ratio:StudioProject["ratio"],signal:AbortSignal):Promise<{buffer:Buffer;duration:number}>;
 }
 export class ArkVideoProvider implements VideoProvider {
+  readonly generationMode = "ark";
+  get modelName() { return this.model; }
   private base:string;
   private key:string;
   private model:string;
@@ -100,20 +106,30 @@ export async function executeVideoJob(job:ClaimedJob,project:StudioProject,conte
     const segment=await context.segment(script.id,async()=>{
       let taskId=await providerTask(job,script.id);
       if (!taskId) {
-        const imageUrl=project.imageAssetId ? await signedAssetUrl(job.owner,project.imageAssetId) : undefined;
+        let imageUrl:string|undefined;
+        if (project.imageAssetId) {
+          if (provider.uploadImage) {
+            const image=await readAsset(job.owner,project.imageAssetId);
+            imageUrl=await provider.uploadImage(image.buffer,image.mime,context.signal);
+          } else imageUrl=await signedAssetUrl(job.owner,project.imageAssetId);
+        }
         await providerCheckpoint(job,script.id);
-        taskId=await provider.submit(project,script,imageUrl,context.signal);
+        try { taskId=await provider.submit(project,script,imageUrl,context.signal); }
+        catch(error) {
+          if (error instanceof StudioError && ["PROVIDER_UNAVAILABLE","PROVIDER_REJECTED","PROVIDER_UPLOAD","PROMPT"].includes(error.code)) await rejectedSubmission(job,script.id);
+          throw error;
+        }
         await providerCheckpoint(job,script.id,taskId);
       }
       while (true) {
         await context.checkpoint(Math.floor(completed/scripts.length*85));
-        const task=await provider.poll(taskId,context.signal);
-        if (task.status==="failed" || task.status==="cancelled" || task.status==="expired") throw new StudioError("PROVIDER_FAILED","Provider task failed; resubmission requires a new approval");
+        const task=await provider.poll(taskId,context.signal,()=>providerRunning(job,script.id));
+        if (task.status==="failed" || task.status==="cancelled" || task.status==="expired") throw new StudioError("PROVIDER_FAILED",task.error ?? "Provider task failed; resubmission requires a new approval");
         if (task.status==="succeeded") {
           if (!task.content?.video_url) throw new StudioError("PROVIDER_FAILED","Completed provider task has no video");
-          const buffer=await provider.download(task.content.video_url,context.signal);
-          const duration=await validateProviderVideo(buffer,project.ratio,context.signal);
-          return {id:script.id,assetId:await registerAsset(job.owner,project.id,"video/mp4",buffer),duration,script:script.script};
+          const downloaded=await provider.download(task.content.video_url,context.signal);
+          const {buffer,duration}=provider.prepare ? await provider.prepare(downloaded,project.ratio,context.signal) : {buffer:downloaded,duration:await validateProviderVideo(downloaded,project.ratio,context.signal)};
+          return {id:script.id,assetId:await registerAsset(job.owner,project.id,"video/mp4",buffer),duration,script:script.script,generationMode:provider.generationMode,model:provider.modelName};
         }
         await delay(5000,undefined,{signal:context.signal});
       }
@@ -123,5 +139,6 @@ export async function executeVideoJob(job:ClaimedJob,project:StudioProject,conte
   }
   project.stage="generated";
   delete project.finalAssetId;
+  delete project.captionAssetId;
   return project;
 }

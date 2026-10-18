@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { schemas, executeTool, type ToolName } from "./service";
-import { compositionOptionsSchema, StudioError, type ToolOutput } from "./types";
+import { compositionOptionsSchema, generationModeSchema, StudioError, type ToolOutput } from "./types";
 import { getProject } from "./store";
 import { database } from "./db";
 import { studioMode } from "./config";
@@ -15,6 +15,7 @@ const modelJob = z.object({
 export const consentOperations = ["start_video_job", "regenerate_segment", "compose_final_video"] as const;
 const confirmedJob = modelJob.extend({ confirmed: z.literal(true), consentToken: z.uuid().optional() });
 const consentSchema = z.object({
+  generationMode:generationModeSchema.optional(),
   projectId: z.uuid(),
   revision: z.number().int().nonnegative(),
   operation: z.enum(consentOperations),
@@ -30,9 +31,9 @@ export const mcpSchemas = {
   grant_cost_consent: consentSchema,
   identify_product: modelJob,
   generate_scripts: modelJob,
-  start_video_job: confirmedJob,
+  start_video_job: confirmedJob.extend({generationMode:generationModeSchema.optional()}),
   get_video_job_status: statusSchema,
-  regenerate_segment: confirmedJob.extend({ segmentId: segment }),
+  regenerate_segment: confirmedJob.extend({ segmentId: segment, generationMode:generationModeSchema.optional() }),
   compose_final_video: confirmedJob.extend({
     composition: compositionOptionsSchema.optional(),
     segmentIds: z.array(segment).min(1).max(4).refine((ids) => new Set(ids).size === ids.length),
@@ -59,7 +60,7 @@ async function grantConsent(owner: string, args: unknown): Promise<{ structuredC
   const token = randomUUID();
   const row = await database().query(
     "INSERT INTO vidio_cost_consents(id,owner_id,project_id,revision,operation,idempotency_key,expires_at) VALUES($1,$2,$3,$4,$5,$6,now()+interval '10 minutes') RETURNING expires_at",
-    [token, owner, consent.projectId, consent.revision, consent.operation, consent.idempotencyKey],
+    [token, owner, consent.projectId, consent.revision, consent.operation, consentKey(consent.operation,consent)],
   );
   return {
     structuredContent: {
@@ -74,20 +75,24 @@ async function consumeConsent(
   owner: string,
   token: string,
   operation: string,
-  input: { projectId: string; revision: number; idempotencyKey?: string },
+  input: { projectId: string; revision: number; idempotencyKey?: string; generationMode?: "wan"|"ark"|"static" },
 ) {
   if (!input.idempotencyKey)
-    throw new StudioError("CONSENT", "Paid steps require the idempotencyKey that was approved", 409);
+    throw new StudioError("CONSENT", "This step requires the idempotencyKey that was approved", 409);
   const result = await database().query(
     `UPDATE vidio_cost_consents
      SET used_at=coalesce(used_at,now())
      WHERE id=$1 AND owner_id=$2 AND project_id=$3 AND revision=$4 AND operation=$5 AND expires_at>now()
        AND idempotency_key=$6::text
      RETURNING id`,
-    [token, owner, input.projectId, input.revision, operation, input.idempotencyKey],
+    [token, owner, input.projectId, input.revision, operation, consentKey(operation,input)],
   );
   if (!result.rows.length)
     throw new StudioError("CONSENT", "This approval is invalid, expired or already used; approve again in the vidio studio", 409);
+}
+
+function consentKey(operation:string,input:{idempotencyKey?:string;generationMode?:"wan"|"ark"|"static"}) {
+  return operation === "compose_final_video" ? input.idempotencyKey : `${input.idempotencyKey}:${input.generationMode ?? (studioMode() === "demo" ? "static" : "ark")}`;
 }
 
 export async function executeMcpTool(owner: string, name: McpToolName, args: unknown) {
@@ -107,8 +112,8 @@ export async function executeMcpTool(owner: string, name: McpToolName, args: unk
     : name as ToolName;
   if (consentOperations.some((operation) => operation === name)) {
     if (!consentToken)
-      throw new StudioError("CONSENT", "Approve this paid step in the vidio studio first; a model-declared confirmation is not sufficient", 409);
-    await consumeConsent(owner, consentToken, name, input as unknown as { projectId: string; revision: number; idempotencyKey?: string });
+      throw new StudioError("CONSENT", "Approve this step in the vidio studio first; a model-declared confirmation is not sufficient", 409);
+    await consumeConsent(owner, consentToken, name, input as unknown as { projectId: string; revision: number; idempotencyKey?: string;generationMode?:"wan"|"ark"|"static" });
   }
   const result = await executeTool(owner, target, input);
   const job = result.structuredContent.job;

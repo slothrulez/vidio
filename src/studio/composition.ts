@@ -73,10 +73,22 @@ export async function composeOwnedSegments(
       await writeFile(path.join(workspace, `${id}.mp4`), asset.buffer, {
         mode: 0o600,
       });
+      const sourceFile=path.join(workspace,`${id}.mp4`);
+      const duration=await probeVideo(sourceFile,project.ratio,signal);
+      if (Math.abs(duration-source.duration)>0.15) throw new StudioError("COMPOSITION","Scene metadata does not match the stored video timeline");
+      if (options?.transition === "fade" && ids.length>1) {
+        const index=ids.indexOf(id);
+        const [width,height]=project.ratio === "16:9" ? [640,360] : project.ratio === "9:16" ? [360,640] : [480,480];
+        const videoFilters=[`scale=${width}:${height}`,"setsar=1","fps=24"];
+        const audioFilters=["aresample=44100","aformat=channel_layouts=stereo"];
+        if (index>0) { videoFilters.push("fade=t=in:st=0:d=0.2"); audioFilters.push("afade=t=in:st=0:d=0.2"); }
+        if (index<ids.length-1) { videoFilters.push(`fade=t=out:st=${duration-0.2}:d=0.2`); audioFilters.push(`afade=t=out:st=${duration-0.2}:d=0.2`); }
+        await run("ffmpeg",["-v","error","-xerror","-y","-i",sourceFile,"-vf",videoFilters.join(","),"-af",audioFilters.join(","),"-c:v","libx264","-preset","fast","-pix_fmt","yuv420p","-c:a","aac","-ac","2","-t",String(duration),path.join(workspace,`${id}-fade.mp4`)],{signal,timeout:120_000,maxBuffer:100_000});
+      }
     }
     await writeFile(
       path.join(workspace, "concat.txt"),
-      ids.map((id) => `file '${id}.mp4'`).join("\n"),
+      ids.map((id) => `file '${id}${options?.transition === "fade" && ids.length>1 ? "-fade" : ""}.mp4'`).join("\n"),
       { mode: 0o600 },
     );
     const args = [
