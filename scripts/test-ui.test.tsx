@@ -14,6 +14,7 @@ import {
   type EmbeddedTransport,
 } from "../src/chatgpt/EmbeddedStudio";
 import { sceneStates, outputIsReady } from "../src/chatgpt/ui-state";
+import { Studio, type StudioTransport } from "../src/studio/Studio";
 import type {
   StudioProject,
   ToolResponse,
@@ -318,3 +319,42 @@ test("terminal polling fetches a fresh project rather than leaving an obsolete a
   await waitFor(()=>assert.equal((screen.getByRole("button",{name:"Save all script edits"}) as HTMLButtonElement).disabled,true));
   assert.equal((screen.getByLabelText("Narration · scene 1") as HTMLTextAreaElement).disabled,false);
 });
+
+for (const alreadyCompleted of [false, true]) {
+  test(`web studio refreshes the completed project ${alreadyCompleted ? 'when reopened' : 'after polling'}`, async () => {
+    const jobId = randomUUID();
+    const project: StudioProject = {
+      ...fixture(), stage: 'new', revision: 1, features: [], scripts: [], activeJobId: jobId,
+    };
+    const completed: StudioProject = {
+      ...project, stage: 'identified', revision: 2, features: ['Fresh completed brief'],
+    };
+    delete completed.activeJobId;
+    let jobReads = 0, projectReads = 0;
+    const api: StudioTransport = {
+      async callTool(name) {
+        if (name === 'get_project') {
+          projectReads++;
+          await new Promise(resolve => setTimeout(resolve, 50));
+          return response(completed);
+        }
+        assert.equal(name, 'get_job');
+        jobReads++;
+        const status = alreadyCompleted || jobReads > 1 ? 'succeeded' : 'queued';
+        return {
+          structuredContent: {
+            mode: 'demo', message: 'Job status',
+            job: { id: jobId, projectId: project.id, operation: 'identify_product', status,
+              progress: status === 'succeeded' ? 100 : 0, error: null, createdAt: project.createdAt },
+          },
+        };
+      },
+    };
+    render(<Studio embedded transport={api} incoming={response(project)} />);
+    const draft = await screen.findByRole('button', { name: 'Draft sample scripts' }, { timeout: 5000 });
+    assert.ok(screen.getByText('Fresh completed brief'));
+    assert.equal((draft as HTMLButtonElement).disabled, false);
+    assert.equal(projectReads, 1);
+    assert.equal(jobReads, alreadyCompleted ? 1 : 2);
+  });
+}

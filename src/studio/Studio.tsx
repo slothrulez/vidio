@@ -234,7 +234,17 @@ export function Studio({
     let alive = true;
     void transport
       .callTool("get_job", { jobId: activeJobId })
-      .then((result) => {
+      .then(async (result) => {
+        if (!alive) return;
+        if (!['queued', 'running'].includes(result.structuredContent.job?.status ?? 'failed')) {
+          const updated = await transport.callTool('get_project', {
+            projectId: result.structuredContent.job?.projectId,
+          });
+          if (!alive) return;
+          apply(updated);
+          if (result.structuredContent.job?.error)
+            setError(result.structuredContent.job.error);
+        }
         if (alive) apply(result);
       })
       .catch((error) => {
@@ -260,7 +270,6 @@ export function Studio({
       try {
         const result = await transport.callTool("get_job", { jobId });
         if (!alive) return;
-        apply(result);
         if (
           !["queued", "running"].includes(
             result.structuredContent.job?.status ?? "failed",
@@ -271,11 +280,13 @@ export function Studio({
           });
           if (alive) {
             apply(updated);
+            apply(result);
             if (result.structuredContent.job?.error)
               setError(result.structuredContent.job.error);
           }
           return;
         }
+        apply(result);
         attempts = 0;
       } catch (error) {
         attempts++;
